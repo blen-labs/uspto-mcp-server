@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Documentation site for @blen/uspto-mcp-server (Astro Starlight, published to GitHub Pages).",
+  "description": "Documentation site for @blen/uspto-mcp-server (Astro Starlight, served at /docs by the hosted server).",
   "packageManager": "pnpm@10.33.0",
   "engines": {
     "node": "^24.11.0 || ^26.0.0"
