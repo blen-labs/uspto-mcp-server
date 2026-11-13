@@ -130,6 +130,12 @@ async function main(): Promise<void> {
     shutdownSignal: shutdownController.signal,
   };
   const deps = await buildSupervisor(cfg);
+  // Base --http with real auth serves every token holder through the process keys. USPTO keys are
+  // personal, so that mode is for one owner (yourself behind your own IdP); multi-user hosting
+  // must use USPTO_AUTH_PROVIDER=accounts, where each user brings their own key.
+  if (args.http && !accounts && !args.insecure && (cfg.odpApiKey || cfg.tsdrApiKey)) {
+    log.warn('http.personal_keys_shared', { note: 'USPTO keys are personal: every authenticated caller uses this server\'s keys. Use USPTO_AUTH_PROVIDER=accounts for multiple users.' });
+  }
 
   let handle: HttpHandle | undefined;
 
@@ -159,7 +165,8 @@ async function main(): Promise<void> {
         log.warn('config.invalid_client_ip_header', { header: name });
         return undefined;
       })(),
-      subjectDailyQuota: Number(process.env.USPTO_SUBJECT_DAILY_QUOTA ?? 10_000),
+      // An empty or invalid value falls back to the default (Number('') is 0, which would allow one request a day).
+      subjectDailyQuota: atLeastOne(process.env.USPTO_SUBJECT_DAILY_QUOTA, 10_000),
       insecure: args.insecure,
       allowedHosts,
       allowedOrigins,

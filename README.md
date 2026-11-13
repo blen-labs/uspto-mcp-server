@@ -189,7 +189,7 @@ The most common knobs (full list and defaults in [`.env.example`](./.env.example
 | `USPTO_MAX_RESPONSE_BYTES` | `8388608` | Largest upstream body accepted. |
 | `USPTO_MAX_CONCURRENT_EXECUTIONS` / `USPTO_MAX_EXECUTIONS_PER_SUBJECT` | `8` / `2` | Simultaneous executions per server / per authenticated subject (`Busy` beyond). |
 | `USPTO_CACHE_TTL_MS` / `USPTO_CACHE_MAX_ITEMS` | `600000` / `1000` | Response cache. |
-| `USPTO_AUTH_PROVIDER` | `none` | `none` (only with `--insecure`) / `generic-oidc` / `clerk` / `workos` / `auth0` / `accounts`. Unknown values stop startup. |
+| `USPTO_AUTH_PROVIDER` | `none` | `none` (only with `--insecure`) / `generic-oidc` / `clerk` / `workos` / `auth0` / `accounts`. Unknown values stop startup. The OIDC providers serve every token holder with this server's own USPTO keys, so use them only for yourself; to host for other people use `accounts`, where each user brings their own key (USPTO keys are personal). |
 | `USPTO_AUTH_ISSUER` / `USPTO_AUTH_AUDIENCE` / `USPTO_AUTH_JWKS_URL` | — | Required for OIDC providers (JWKS over https; http only on loopback). |
 | `USPTO_AUTH_SCOPES` | — | Comma-separated scopes every token must carry; advertised in resource metadata. |
 | `USPTO_PUBLIC_ORIGIN` | — | Public origin clients reach (OAuth metadata, trusted Host). Required for non-loopback HTTP unless `USPTO_ALLOWED_HOSTS` is set. |
