@@ -81,6 +81,12 @@ jobs:
           mkdir -p /tmp/mcpb && cd /tmp/mcpb && unzip -q "$GITHUB_WORKSPACE/uspto-mcp-server.mcpb"
           test -f LICENSE && test -f NOTICE
           node "$GITHUB_WORKSPACE/scripts/mcpb-smoke.mjs" /tmp/mcpb
+      # The manifest also admits Node 24 (engines floor): run the same bundle there.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: MCPB smoke on Node 24
+        run: node --version && node "$GITHUB_WORKSPACE/scripts/mcpb-smoke.mjs" /tmp/mcpb
 
   docker:
     name: docker image
