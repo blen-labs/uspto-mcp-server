@@ -7,15 +7,33 @@ import { log } from '../util/logger.js';
 import { preflight } from './policy.js';
 import { DEFAULT_LIMITS, LOG_LINE_OVERHEAD, LOG_TRUNCATED, LogSink, MAX_ERROR_MESSAGE, boundMessage, checkRpcArgs, finishValue, policyMessage, resultTooLarge, type SandboxLimits } from './limits.js';
 
+/** The supervisor exits with this code when the sandbox process outgrows its memory limit. */
+const MEMORY_EXIT_CODE = 97;
+/**
+ * How far the resident size of the sandbox process may grow during one execution: twice `memoryMb`
+ * plus this allowance. Twice, because the process has two V8 isolates (the supervisor, which
+ * relays every SDK result, and the worker) and the heap flag lets each one reach `memoryMb` before
+ * it must collect garbage. The allowance covers the runtime's own buffers for those messages.
+ */
+const MEMORY_HEADROOM_MB = 96;
+
 /**
  * Deno sandbox.
  *
  * Boundary: Node host (owns the deadline, byte budgets, and the child's lifetime)
  *   → `deno run` of a fixed supervisor script with NO --allow-* flags (deny-by-default: no net, fs,
  *     env, ffi, subprocess), a minimal environment, and no user code on disk
- *   → a module Worker that receives the user code by message. Before user code runs, the worker's
- *     ambient globals that could reach the process or the protocol (`Deno`, `postMessage`, `fetch`,
- *     `Worker`, ...) are replaced with `undefined` and `console` is redirected to log messages.
+ *   → a module Worker that receives the user code by message. Before user code runs, the worker
+ *     deletes every global that is not part of the language (`Deno`, `fetch`, `Worker`, `process`,
+ *     `postMessage`, ...), keeps a `console` that posts log messages, and refuses to run if a global
+ *     stays. V8 does not build code from strings in this process (`eval`, `Function`), so the user
+ *     code is loaded as a module, and a module cannot be loaded by name without the `import()`
+ *     syntax that the preflight rejects.
+ *
+ * Memory: V8's heap flag does not count buffers (ArrayBuffer and typed arrays live outside the
+ * JavaScript heap). The supervisor therefore watches the resident size of its whole process and
+ * exits with MEMORY_EXIT_CODE when the growth since the start frame passes the limit. The heap
+ * flag stays as a second guard.
  *
  * Protocol: the supervisor talks to the host over stdin/stdout with one JSON frame per line,
  * prefixed by a random token the supervisor generates and announces before the worker exists.
@@ -62,11 +80,13 @@ export class DenoRunner implements SandboxRunner {
     if (!policy.ok) return fail('PolicyError', policyMessage(policy.errors));
     if (Buffer.byteLength(opts.code, 'utf8') > limits.maxCodeBytes) return fail('CodeTooLarge', `Code exceeds ${limits.maxCodeBytes} bytes.`);
 
+    const memoryMb = Math.max(16, opts.memoryMb ?? 64);
+    const memoryLimitMb = 2 * memoryMb + MEMORY_HEADROOM_MB;
     let child: ChildProcessWithoutNullStreams;
     try {
       child = spawn('deno', [
         'run', '--no-prompt', '--no-config', '--no-lock', '--no-remote', '--no-npm', '--quiet',
-        `--v8-flags=--max-old-space-size=${Math.max(16, opts.memoryMb ?? 64)}`,
+        `--v8-flags=--max-old-space-size=${memoryMb},--disallow-code-generation-from-strings`,
         DenoRunner.supervisor(),
       ], { stdio: ['pipe', 'pipe', 'pipe'], env: childEnv(), detached: process.platform !== 'win32' });
     } catch (err) {
@@ -81,6 +101,7 @@ export class DenoRunner implements SandboxRunner {
       let buffered = '';
       let bufferedBytes = 0;
       let pendingRpc = 0;
+      let stderrTail = '';
 
       // Choosing the outcome and tearing down are separate: the first terminal event fixes the
       // result, and the promise resolves only once the child has exited (bounded wait), so the
@@ -112,7 +133,16 @@ export class DenoRunner implements SandboxRunner {
         timeoutMs,
       );
       child.on('error', err => settle({ ok: false, error: { name: 'SpawnError', message: err.message } }));
-      child.on('exit', code => settle({ ok: false, error: { name: 'ExitError', message: `The sandbox exited unexpectedly (code ${code}).` } }));
+      // The exit code carries the reason: a last frame on stdout could arrive after this event.
+      child.on('exit', (code, killedBy) => {
+        // What Deno and V8 wrote about the exit is for the operator, not for the caller.
+        if (!settled && code !== MEMORY_EXIT_CODE) log.warn('sandbox.exited', { code, signal: killedBy, stderr: stderrTail });
+        settle({ ok: false, error: code === MEMORY_EXIT_CODE
+          ? { name: 'MemoryLimitExceeded', message: `The program used more memory than its limit (memoryMb: ${memoryMb}). Request fewer records (limit), select fields (fields: [...]), or process the data in smaller steps.` }
+          : { name: 'ExitError', message: killedBy
+            ? `The sandbox process ended abnormally (${killedBy}). The usual cause is a program that fills the JavaScript heap (memoryMb: ${memoryMb}).`
+            : `The sandbox exited unexpectedly (code ${code}).` } });
+      });
       if (signal?.aborted) return onAbort();
       signal?.addEventListener('abort', onAbort, { once: true });
 
@@ -137,6 +167,10 @@ export class DenoRunner implements SandboxRunner {
           try {
             const res = await rpc.dispatch({ binding: msg.binding, path: msg.path as string[], args: msg.args }, { signal });
             send({ t: 'rpc-result', id: msg.id, ok: res.ok, value: res.value, error: res.error });
+          } catch {
+            // The bridge reports a failed call as a result. If it rejects instead, the program gets
+            // an error; a rejection that left this function would end the server process.
+            send({ t: 'rpc-result', id: msg.id, ok: false, error: { name: 'Error', message: 'The SDK call failed.' } });
           } finally {
             pendingRpc--;
           }
@@ -175,7 +209,7 @@ export class DenoRunner implements SandboxRunner {
             const m = /^USPTO-SANDBOX ([0-9a-f]{64})$/.exec(line);
             if (!m) return settle({ ok: false, error: { name: 'SandboxProtocolError', message: 'The sandbox did not start correctly.' } });
             token = m[1]!;
-            send({ t: 'start', code: opts.code, bindings: opts.bindings ?? [], limits: {
+            send({ t: 'start', code: opts.code, bindings: opts.bindings ?? [], memoryBytes: memoryLimitMb * 1024 * 1024, limits: {
               maxLogBytes: limits.maxLogBytes, maxLogLines: limits.maxLogLines, logLineOverhead: LOG_LINE_OVERHEAD,
               logTruncated: LOG_TRUNCATED, maxRpcArgBytes: limits.maxRpcArgBytes, maxResultBytes: limits.maxResultBytes,
               maxError: MAX_ERROR_MESSAGE,
@@ -190,7 +224,8 @@ export class DenoRunner implements SandboxRunner {
         }
       });
       child.stderr.setEncoding('utf8');
-      child.stderr.on('data', (chunk: string) => { if (!settled) logs.push(chunk.trimEnd()); });
+      // Never into `logs`: a fatal error dump from V8 names addresses and the process id.
+      child.stderr.on('data', (chunk: string) => { stderrTail = (stderrTail + chunk).slice(-2000); });
       child.stdin.on('error', () => { /* child exited; exit handler settles */ });
     });
   }
@@ -231,9 +266,21 @@ writeLine('USPTO-SANDBOX ' + TOKEN);
 const WORKER_SOURCE = ${'`'}
 // Trusted primitives, captured before user code exists: budgets below use these, so user code that
 // replaces JSON.stringify, TextEncoder or Promise.prototype.then cannot push oversized data out.
-const post = self.postMessage.bind(self);
-const listen = self.addEventListener.bind(self);
+const G = globalThis;
+const post = G.postMessage.bind(G);
+const listen = G.addEventListener.bind(G);
 const S = JSON.stringify, P = JSON.parse, Str = String, apply = Reflect.apply, then = Promise.prototype.then;
+const ownKeys = Reflect.ownKeys, deleteProperty = Reflect.deleteProperty, defineProperty = Object.defineProperty;
+const BlobOf = Blob, urlFor = URL.createObjectURL.bind(URL), forgetUrl = URL.revokeObjectURL.bind(URL);
+// The language's own globals. A program gets these, console and the SDK bindings.
+const LANGUAGE = new Set(['globalThis', 'Infinity', 'NaN', 'undefined', 'eval', 'isFinite', 'isNaN', 'parseFloat', 'parseInt',
+  'decodeURI', 'decodeURIComponent', 'encodeURI', 'encodeURIComponent', 'escape', 'unescape',
+  'AggregateError', 'Array', 'ArrayBuffer', 'AsyncDisposableStack', 'BigInt', 'BigInt64Array', 'BigUint64Array', 'Boolean',
+  'DataView', 'Date', 'DisposableStack', 'Error', 'EvalError', 'FinalizationRegistry', 'Float16Array', 'Float32Array',
+  'Float64Array', 'Function', 'Int8Array', 'Int16Array', 'Int32Array', 'Iterator', 'Map', 'Number', 'Object', 'Promise',
+  'Proxy', 'RangeError', 'ReferenceError', 'RegExp', 'Set', 'SharedArrayBuffer', 'String', 'SuppressedError', 'Symbol',
+  'SyntaxError', 'TypeError', 'Uint8Array', 'Uint8ClampedArray', 'Uint16Array', 'Uint32Array', 'URIError', 'WeakMap',
+  'WeakRef', 'WeakSet', 'Atomics', 'Intl', 'JSON', 'Math', 'Reflect', 'Temporal']);
 const encoder = new TextEncoder(), encode = TextEncoder.prototype.encode, sl = String.prototype.slice;
 // The intrinsic %TypedArray%.prototype.byteLength getter, captured: user code may redefine
 // Uint8Array.prototype.length, but cannot change a getter we already hold.
@@ -288,17 +335,19 @@ function run(code, bindings, limits) {
     if (logBytes > L.maxLogBytes - L.logTruncated.length - L.logLineOverhead || logLines >= L.maxLogLines) { logDone = true; text = L.logTruncated; }
     post({ t: 'log', text });
   };
-  self.console = { log, info: log, warn: log, error: log, debug: log };
-  for (const k of ['Deno', 'postMessage', 'close', 'fetch', 'WebSocket', 'WebSocketStream', 'Worker', 'EventSource',
-                   'navigator', 'caches', 'localStorage', 'sessionStorage', 'importScripts', 'BroadcastChannel']) {
-    try { Object.defineProperty(self, k, { value: undefined, writable: false, configurable: false }); } catch {}
+  // Deno puts its whole runtime on the global object (Deno, fetch, Worker, process, Buffer, ...).
+  // Delete every name that is not the language's own, and do not run the program if one stays:
+  // a name on a deny list would miss whatever a later Deno version adds.
+  const stayed = [];
+  for (const key of ownKeys(G)) {
+    if (typeof key === 'string' && !LANGUAGE.has(key) && !deleteProperty(G, key)) stayed[stayed.length] = key;
   }
-  for (const name of bindings) {
-    try { Object.defineProperty(self, name, { value: makeProxy(name), writable: false, configurable: false }); } catch {}
-  }
-  let fn;
-  try { fn = new Function('"use strict"; return (async () => {\\n' + code + '\\n})();'); }
-  catch (e) { post({ t: 'done', ok: false, error: { name: Str(e?.name ?? 'SyntaxError'), message: cut(Str(e?.message ?? e), L.maxError) } }); return; }
+  if (stayed.length) { post({ t: 'done', ok: false, error: { name: 'SandboxSetupError', message: 'The sandbox could not remove a runtime global.' } }); return; }
+  // The global object still inherits the event methods of a worker (addEventListener,
+  // dispatchEvent). Deno itself calls them there to report an unhandled rejection, so they stay;
+  // they act only on this worker's own events.
+  defineProperty(G, 'console', { value: { log, info: log, warn: log, error: log, debug: log }, writable: true, configurable: true });
+  for (const name of bindings) defineProperty(G, name, { value: makeProxy(name), writable: false, configurable: false });
   const fail = (e) => {
     let name = 'Error', message = '', status;
     try { name = cut(Str(e?.name ?? 'Error'), 100); message = cut(Str(e?.message !== undefined ? e.message : e), L.maxError); status = typeof e?.status === 'number' ? e.status : undefined; } catch {}
@@ -312,9 +361,10 @@ function run(code, bindings, limits) {
     if (size > L.maxResultBytes) post({ t: 'done', ok: false, tooLarge: true, size });
     else post({ t: 'done', ok: true, json });
   };
-  let started;
-  try { started = fn(); } catch (e) { fail(e); return; }
-  apply(then, started, [done, fail]);
+  // V8 builds no code from strings here, so the program is loaded as a module. The wrapper is the
+  // one the preflight checked: the program is the body of one async function.
+  const url = urlFor(new BlobOf(['export const result = (async () => {\\n' + code + '\\n})();'], { type: 'application/javascript' }));
+  apply(then, import(url), [(loaded) => { forgetUrl(url); apply(then, loaded.result, [done, fail]); }, fail]);
 }
 ${'`'};
 
@@ -329,6 +379,14 @@ worker.onmessage = (ev) => {
 };
 worker.onerror = (e) => { e.preventDefault(); frame({ t: 'done', ok: false, error: { name: 'Error', message: String(e.message ?? 'Worker error') } }); };
 
+// This thread, which user code cannot reach, ends the process when it has grown past the limit.
+// It ends the process and not the worker: a worker cannot be stopped inside one native call that is
+// still writing to a buffer.
+const watchMemory = (limitBytes) => {
+  const base = Deno.memoryUsage().rss;
+  setInterval(() => { if (!(Deno.memoryUsage().rss - base <= limitBytes)) Deno.exit(${MEMORY_EXIT_CODE}); }, 5);
+};
+
 // Host → supervisor: token-prefixed JSON lines on stdin.
 const dec = new TextDecoder();
 let buf = '';
@@ -341,7 +399,7 @@ for await (const chunk of Deno.stdin.readable) {
     if (!line.startsWith(TOKEN)) continue;
     let msg;
     try { msg = JSON.parse(line.slice(TOKEN.length)); } catch { continue; }
-    if (msg.t === 'start') worker.postMessage({ t: 'start', code: msg.code, bindings: msg.bindings, limits: msg.limits });
+    if (msg.t === 'start') { watchMemory(msg.memoryBytes); worker.postMessage({ t: 'start', code: msg.code, bindings: msg.bindings, limits: msg.limits }); }
     else if (msg.t === 'rpc-result') worker.postMessage(msg);
   }
 }

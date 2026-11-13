@@ -135,6 +135,14 @@ describe('RPC method boundary', () => {
   });
 });
 
+describe('dispatch error results', () => {
+  it.for([['undefined', undefined], ['null', null], ['a string', 'plain text']] as const)('turns a method that rejects with %s into an error result', async ([, reason]) => {
+    const registry = { methods: { odp: { 'a.b': () => Promise.reject(reason) } }, meta: [] };
+    const res = await dispatch(registry, { binding: 'odp', path: ['a', 'b'], args: [] });
+    expect(res).toMatchObject({ ok: false, error: { name: 'Error' } });
+  });
+});
+
 describe('method registry and dispatch table stay in sync', () => {
   it('dispatch test table covers every registered method', () => {
     const registered = getSources(config).flatMap(s => Object.keys(s.methods).map(m => `${s.name}.${m}`)).sort();

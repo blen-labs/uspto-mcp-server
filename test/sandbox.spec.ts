@@ -39,6 +39,26 @@ describe('sandbox policy preflight', () => {
   });
 });
 
+describe('sandbox policy preflight: one text, one program', () => {
+  it('rejects code that a script and a module read as different programs', () => {
+    // A module reads `<!--` as operators and the next lines as a template literal.
+    // A script reads the rest of line 1 as a comment and executes line 2.
+    const twoPrograms = 'let y = 1, x = 0 <!--y ; `\nreturn Function("return 7")()\n//`';
+    expect(preflight(twoPrograms).ok).toBe(false);
+  });
+
+  it('still allows operators that only look like such comments', () => {
+    expect(preflight('let x = 3, n = 0; while (x --> 0) n++; return n').ok).toBe(true);
+  });
+
+  it.for([
+    ['a second statement', 'return 1 })(); (async () => { return 2'],
+    ['a module declaration', '}); export const x = 1; (async () => {'],
+  ] as const)('rejects code that closes the wrapper function to add %s', ([, code]) => {
+    expect(preflight(code).ok).toBe(false);
+  });
+});
+
 describe.each([new IsolateRunner(), new DenoRunner()])('$kind RPC isolation', runner => {
   it('allows public reads but rejects POST access and cache poisoning across executions', async ({ skip }) => {
     if (!(await runner.available())) return skip();
@@ -88,7 +108,8 @@ describe('deno supervisor', () => {
   it('never embeds user code or binding names (they arrive by message)', () => {
     expect(SUPERVISOR_SOURCE).not.toContain('__USER_CODE__');
     expect(SUPERVISOR_SOURCE).toContain("crypto.getRandomValues");
-    expect(SUPERVISOR_SOURCE).toContain("'Deno', 'postMessage'");
+    // V8 builds no code from strings in the sandbox process, so the supervisor must not ask it to.
+    expect(SUPERVISOR_SOURCE).not.toContain('new Function');
   });
 });
 
@@ -208,6 +229,36 @@ describe.each([new IsolateRunner(), new DenoRunner()])('$kind runner contract', 
   });
 });
 
+describe.each([new IsolateRunner(), new DenoRunner()])('$kind runner with a failing bridge', runner => {
+  it('gives the program an error when the SDK dispatch itself rejects, and keeps running', async ({ skip }) => {
+    if (!(await runner.available())) return skip();
+    const rejecting = { dispatch: () => Promise.reject(undefined) };
+    const res = await runner.execute({ code: 'try { await odp.a(); return "no error"; } catch (e) { return [e.name, e.message]; }', bindings: ['odp'], timeoutMs: 3000 }, rejecting);
+    expect(res).toMatchObject({ ok: true, value: ['Error', 'The SDK call failed.'] });
+  });
+});
+
+describe.each([new IsolateRunner(), new DenoRunner()])('$kind memory limit', runner => {
+  const run = (code: string) => runner.execute({ code, bindings: [], timeoutMs: 10_000, memoryMb: 64 }, echo);
+  const MIB = 1024 * 1024;
+
+  it('runs a program whose buffers fit in memoryMb', async ({ skip }) => {
+    if (!(await runner.available())) return skip();
+    expect(await run(`const b = new Uint8Array(${8 * MIB}); b.fill(1); return b.length;`)).toMatchObject({ ok: true, value: 8 * MIB });
+  });
+
+  // Buffers live outside the JavaScript heap, so a heap limit alone does not count them.
+  it.for([
+    ['many buffers', `const keep = []; for (let i = 0; i < 16; i++) { const b = new Uint8Array(${64 * MIB}); b.fill(1); keep.push(b); } return keep.length;`],
+    ['one large buffer', `const b = new Uint8Array(${1024 * MIB}); b.fill(1); return b.length;`],
+  ] as const)('stops a program that holds far more than memoryMb in %s', async ([, code], { skip }) => {
+    if (!(await runner.available())) return skip();
+    const res = await run(code);
+    expect(res.ok).toBe(false);
+    if (runner.kind === 'deno') expect(res.error).toMatchObject({ name: 'MemoryLimitExceeded' });
+  });
+});
+
 describe('deno runner isolation (gated on availability)', () => {
   const runner = new DenoRunner();
   const run = (code: string, extra: Record<string, unknown> = {}) =>
@@ -219,10 +270,35 @@ describe('deno runner isolation (gated on availability)', () => {
     expect(res).toMatchObject({ ok: true, value: 'ok' });
   });
 
-  it('removes ambient Deno, network and messaging globals, even via the Function constructor', async ({ skip }) => {
+  it('cannot build code from a string', async ({ skip }) => {
     if (!(await runner.available())) return skip();
-    const res = await run('const c = "constr" + "uctor"; const F = (async () => {})[c][c]; return F("return [typeof Deno, typeof self.Deno, typeof self.fetch, typeof self.postMessage, typeof self.Worker]")();');
-    expect(res).toMatchObject({ ok: true, value: ['undefined', 'undefined', 'undefined', 'undefined', 'undefined'] });
+    const res = await run('const c = "constr" + "uctor"; const F = (async () => {})[c][c]; try { F("return 1"); return "built"; } catch (e) { return e.name; }');
+    expect(res).toMatchObject({ ok: true, value: 'EvalError' });
+  });
+
+  it('gives a program the language globals, console and the SDK bindings, and no runtime globals', async ({ skip }) => {
+    if (!(await runner.available())) return skip();
+    // Names that the preflight accepts, so the runtime alone decides the answer.
+    const gone = ['self', 'navigator', 'postMessage', 'close', 'crypto', 'Blob', 'Request', 'caches',
+      'setTimeout', 'setImmediate', 'structuredClone', 'performance', 'location'];
+    expect(await run(`return [${gone.map(n => `typeof ${n}`).join(', ')}];`)).toMatchObject({ ok: true, value: gone.map(() => 'undefined') });
+    expect(await run('console.log("kept"); return [typeof JSON, typeof Promise, typeof Intl, typeof odp];'))
+      .toMatchObject({ ok: true, value: ['object', 'function', 'object', 'function'], logs: ['kept'] });
+  });
+
+  it('removes the runtime globals that the preflight bans too, so the runtime does not depend on it', async ({ skip }) => {
+    if (!(await runner.available())) return skip();
+    // Straight to the supervisor: no preflight has seen this code.
+    const res = await superviseDirectly('return [typeof Deno, typeof fetch, typeof Worker, typeof WebSocket, typeof process, typeof Buffer, typeof global, typeof WebAssembly];');
+    expect(res).toMatchObject({ t: 'done', ok: true, json: JSON.stringify(Array(8).fill('undefined')) });
+  });
+
+  it('keeps the runtime\'s own diagnostics out of the logs, and names memory when the heap limit ends the process', async ({ skip }) => {
+    if (!(await runner.available())) return skip();
+    const res = await run('console.log("mine"); const a = []; while (true) a.push(new Array(100000).fill("x" + a.length));', { memoryMb: 32, timeoutMs: 10_000 });
+    expect(res.ok).toBe(false);
+    expect(res.error?.message).toMatch(/memory/i);
+    expect(res.logs).toEqual(['mine']);
   });
 
   it('resolves only after its child process has exited (success, timeout, abort)', async ({ skip }) => {
@@ -256,3 +332,37 @@ describe('sandbox selection', () => {
     } finally { process.env.PATH = prev; }
   });
 });
+
+/** Runs code in the Deno supervisor with no preflight and returns its `done` frame. */
+async function superviseDirectly(code: string): Promise<Record<string, unknown>> {
+  const { spawn } = await import('node:child_process');
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'uspto-supervisor-test-'));
+  writeFileSync(join(dir, 'supervisor.js'), SUPERVISOR_SOURCE);
+  const child = spawn('deno', ['run', '--no-prompt', '--no-config', '--no-lock', '--no-remote', '--no-npm', '--quiet', join(dir, 'supervisor.js')]);
+  try {
+    return await new Promise((resolve, reject) => {
+      let token = '', buffered = '';
+      child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+        buffered += chunk;
+        for (let nl; (nl = buffered.indexOf('\n')) >= 0; buffered = buffered.slice(nl + 1)) {
+          const line = buffered.slice(0, nl);
+          if (!token) {
+            token = line.replace('USPTO-SANDBOX ', '');
+            child.stdin.write(`${token}${JSON.stringify({ t: 'start', code, bindings: [], memoryBytes: 256 * 1024 * 1024, limits: { maxLogBytes: 65536, maxLogLines: 1000, logLineOverhead: 16, logTruncated: '[logs truncated]', maxRpcArgBytes: 65536, maxResultBytes: 262144, maxError: 4000 } })}\n`);
+          } else if (line.startsWith(token)) {
+            const frame = JSON.parse(line.slice(token.length)) as Record<string, unknown>;
+            if (frame.t === 'done') resolve(frame);
+          }
+        }
+      });
+      child.on('exit', code => reject(new Error(`the supervisor exited (code ${code})`)));
+      child.on('error', reject);
+    });
+  } finally {
+    child.kill('SIGKILL');
+    rmSync(dir, { recursive: true, force: true });
+  }
+}

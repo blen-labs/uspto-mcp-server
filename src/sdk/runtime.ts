@@ -43,7 +43,8 @@ export async function dispatch(reg: DispatchRegistry, req: RpcRequest): Promise<
     const value = await method(...req.args);
     return { ok: true, value };
   } catch (err) {
-    const e = err as { name?: string; message?: string; status?: number };
+    // A method can reject with any value, or with none: never read a property of null here.
+    const e = (err ?? {}) as { name?: string; message?: string; status?: number };
     return { ok: false, error: { name: e.name ?? 'Error', message: e.message ?? String(err), status: e.status } };
   }
 }

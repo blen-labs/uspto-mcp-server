@@ -56,7 +56,9 @@ The `execute` tool runs user-supplied JavaScript with layered defenses:
    `process`, `globalThis`, `Buffer`, `Deno`, `fetch`, `Worker`, plus
    `__proto__` / `constructor` / `prototype` member access. The check rejects
    *static* uses of these names; runtime synthesis (e.g. via string
-   concatenation) is the next layer's job.
+   concatenation) is the next layer's job. It reads the code both as a module
+   and as a script, because the two grammars treat HTML-like comments
+   differently, and it rejects code that closes the function that wraps it.
 2. **Runtime isolation** — one of:
    - `isolated-vm`: a fresh V8 isolate per execution, **no host references**
      other than a Reference to the RPC dispatcher and a log sink for `console.*`;
@@ -66,12 +68,19 @@ The `execute` tool runs user-supplied JavaScript with layered defenses:
    - Deno: `deno run --no-prompt --no-config --no-lock --no-remote --no-npm` of a
      fixed supervisor script with **no `--allow-*` flags** (no net/fs/env/ffi/
      subprocess access) and a minimal environment. User code arrives by message
-     (it is never written to disk) and runs in a module Worker whose `Deno`,
-     `postMessage`, `fetch`, `Worker`, `WebSocket`, … globals are replaced with
-     `undefined`. Frames to the host are prefixed with a random token the worker
+     (it is never written to disk) and runs as a module in a Worker. Before it
+     runs, the worker deletes every global that is not part of the language
+     (`Deno`, `fetch`, `Worker`, `process`, `postMessage`, …) and refuses to run
+     if one stays, so a program gets the language's globals, `console` and the SDK
+     bindings. V8 builds no code from strings in this process (`eval` and
+     `Function` throw). Frames to the host are prefixed with a random token the worker
      never sees; all other output is untrusted text. The host owns the deadline,
      kills the process group, and waits for the child to exit before releasing the
-     execution. **Authenticated HTTP serving uses only this runner** (an
+     execution. The heap flag does not count buffers, so the supervisor also ends
+     the process when its resident memory has grown by more than twice `memoryMb`
+     plus 96 MiB during an execution. It checks every 5 ms, so a program can pass
+     that bound by what it writes in one interval.
+     **Authenticated HTTP serving uses only this runner** (an
      in-process runner is refused there, with no fallback).
 3. **Byte budgets**, enforced inside the sandbox before transfer and again on the
    host: code 256 KiB, result 256 KiB, logs 64 KiB / 1,000 lines, SDK-call

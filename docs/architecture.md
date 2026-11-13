@@ -230,14 +230,21 @@ Two runners:
   files, env, FFI or subprocesses) and a minimal environment. The supervisor file
   holds no user data; it is written once per process into a `0700` temporary
   directory and removed at exit. The supervisor generates a random token,
-  announces it, receives the user code in a stdin message, and runs it in a module
-  **Worker** whose `Deno`, `postMessage`, `fetch`, `Worker`, `WebSocket`, … globals
-  are replaced with `undefined` and whose `console` posts log messages. Frames to
+  announces it, receives the user code in a stdin message, and runs it as a module
+  in a **Worker**. The worker first deletes every global that is not part of the
+  language (`Deno`, `fetch`, `Worker`, `process`, `postMessage`, …) and refuses to
+  run if one stays; its `console` posts log messages. Deno runs with
+  `--disallow-code-generation-from-strings`, so `eval` and `Function` throw. Frames to
   the host are token-prefixed JSON lines; the worker never sees the token, and any
-  other stdout bytes are treated as untrusted log text. The Node parent owns the
+  other stdout bytes are treated as untrusted log text. The child's stderr never
+  reaches the result: the host logs its tail when the child exits unexpectedly. The Node parent owns the
   deadline, kills the process group on every exit path, and resolves only after the
   child has exited (bounded wait), so an execution slot is never released while its
-  process is alive. `memoryMb` is applied with `--v8-flags=--max-old-space-size`.
+  process is alive. `memoryMb` is applied with `--v8-flags=--max-old-space-size`,
+  which bounds the JavaScript heap but not buffers (`ArrayBuffer`, typed arrays).
+  So the supervisor also reads the resident size of its process every 5 ms and exits
+  when the process has grown by more than twice `memoryMb` plus 96 MiB since the
+  execution started; the host reports that exit as `MemoryLimitExceeded`.
 
 Both runners enforce the same **byte budgets** (`src/sandbox/limits.ts`), first
 inside the sandbox — so over-budget data is never transferred — and again on the
