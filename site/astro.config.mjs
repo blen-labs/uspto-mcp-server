@@ -6,11 +6,11 @@ import starlightLinksValidator from 'starlight-links-validator';
 import starlightLlmsTxt from 'starlight-llms-txt';
 import { groups, pages } from './src/lib/pages.mjs';
 
-// GitHub Pages serves a project site under the repository name. To move to a custom domain,
-// set `site` to it and `base` to '/', and take the base out of the three hero links in
-// index.mdx and out of scripts/check-links.mjs. Every other link is root-absolute.
-const site = 'https://blen-labs.github.io';
-const base = '/uspto-mcp-server';
+// The hosted server serves the built site at /docs (deploy/Dockerfile builds it into the image;
+// src/accounts/docs.ts serves it). To move it, change `site` and `base` here and the base in the
+// two hero links in index.mdx and in scripts/check-links.mjs. Every other link is root-absolute.
+const site = 'https://uspto.mcp.blenlabs.com';
+const base = '/docs';
 
 const repo = 'https://github.com/blen-labs/uspto-mcp-server';
 

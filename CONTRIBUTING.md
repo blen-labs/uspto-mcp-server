@@ -59,9 +59,10 @@ own `USPTO_API_KEY` / `USPTO_TSDR_API_KEY` (keep them in a gitignored `.env`; th
 live suite is read-only, sequential and small, and never runs in PR CI). Never
 commit keys.
 
-The documentation site is in `site/` (Astro Starlight, published to GitHub Pages by
-`.github/workflows/docs.yml`). It is its own pnpm root with its own lockfile, so the
-server's install and audit never see its packages:
+The documentation site is in `site/` (Astro Starlight). The Docker image builds it and the
+hosted server serves it at `/docs` (`src/accounts/docs.ts`), so it deploys with the server;
+the CI Docker job builds it on every pull request. It is its own pnpm root with its own
+lockfile, so the server's install and audit never see its packages:
 
 ```bash
 cd site

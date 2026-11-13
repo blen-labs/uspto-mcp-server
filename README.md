@@ -8,7 +8,7 @@
 
 **Ask your AI assistant real questions about U.S. patents and trademarks — and get answers grounded in the official USPTO APIs.**
 
-**Documentation:** [blen-labs.github.io/uspto-mcp-server](https://blen-labs.github.io/uspto-mcp-server/) has connect buttons for Claude Desktop, Cursor and VS Code, key setup, recipes, and the SDK reference.
+**Documentation:** [uspto.mcp.blenlabs.com/docs](https://uspto.mcp.blenlabs.com/docs/) has connect buttons for Claude Desktop, Cursor and VS Code, key setup, recipes, and the SDK reference.
 
 This is a [Model Context Protocol](https://modelcontextprotocol.io) server that connects any MCP client (Claude Desktop and others) to the U.S. Patent and Trademark Office's public APIs:
 

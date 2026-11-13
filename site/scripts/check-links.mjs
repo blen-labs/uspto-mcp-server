@@ -66,7 +66,7 @@ for (const { label, slug } of pages) {
   const copy = read(`dist${markdownPath(slug)}`);
   assert.ok(/^# \S/m.test(copy), `${label}: Markdown copy has no title`);
   const html = read(slug === 'index' ? 'dist/index.html' : `dist/${slug}/index.html`);
-  assert.ok(html.includes(`href="/uspto-mcp-server${markdownPath(slug)}"`), `${label}: page does not link to its Markdown copy`);
+  assert.ok(html.includes(`href="/docs${markdownPath(slug)}"`), `${label}: page does not link to its Markdown copy`);
 }
 
 console.log('connect links and Markdown copies: ok');
