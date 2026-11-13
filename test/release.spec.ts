@@ -91,6 +91,8 @@ describe('release.mjs against disposable repositories', () => {
     const { join, resolve } = await import('node:path');
     const { execFileSync } = await import('node:child_process');
     const root = resolve(__dirname, '..');
+    // The disposable repository gets the real package.json, so its tag must name that version.
+    const declared = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version as string;
     const dir = mkdtempSync(join(tmpdir(), 'uspto-release-'));
     for (const f of ['package.json', 'CHANGELOG.md']) cpSync(join(root, f), join(dir, f));
     mkdirSync(join(dir, 'scripts'));
@@ -98,12 +100,12 @@ describe('release.mjs against disposable repositories', () => {
     for (const f of ['src/server/mcpServer.ts', 'src/sdk/bindings.ts']) { mkdirSync(join(dir, f, '..'), { recursive: true }); cpSync(join(root, f), join(dir, f)); }
     const git = (...a: string[]) => execFileSync('git', a, { cwd: dir, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } });
     git('init', '-q', '-b', 'main'); git('add', '.'); git('commit', '-qm', 'feat: initial');
-    if (tagged) { git('tag', 'v0.1.0'); writeFileSync(join(dir, 'x.txt'), 'x'); git('add', '.'); git('commit', '-qm', next); }
+    if (tagged) { git('tag', `v${declared}`); writeFileSync(join(dir, 'x.txt'), 'x'); git('add', '.'); git('commit', '-qm', next); }
     const out = join(dir, 'gh-output');
     writeFileSync(out, '');
     execFileSync(process.execPath, ['scripts/release.mjs'], { cwd: dir, env: { ...process.env, GITHUB_OUTPUT: out, RELEASE_DATE: '2026-11-12' } });
     const outputs = Object.fromEntries(readFileSync(out, 'utf8').trim().split('\n').map(l => l.split('=') as [string, string]));
-    return { outputs, notes: existsSync(join(dir, 'release-notes.generated.md')) ? readFileSync(join(dir, 'release-notes.generated.md'), 'utf8') : '', pkg: JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')), changelog: readFileSync(join(dir, 'CHANGELOG.md'), 'utf8') };
+    return { declared, outputs, notes: existsSync(join(dir, 'release-notes.generated.md')) ? readFileSync(join(dir, 'release-notes.generated.md'), 'utf8') : '', pkg: JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')), changelog: readFileSync(join(dir, 'CHANGELOG.md'), 'utf8') };
   };
 
   it('a fresh repository (no tags) releases the declared version with its hand-written notes', async () => {
@@ -118,9 +120,11 @@ describe('release.mjs against disposable repositories', () => {
   });
 
   it('a tagged repository bumps from the last tag', async () => {
-    const { outputs, pkg } = await run(true);
-    expect(outputs).toMatchObject({ released: 'true', bump: 'minor', version: '0.2.0' });
-    expect(pkg.version).toBe('0.2.0');
+    const { declared, outputs, pkg } = await run(true);
+    const [major, minor] = declared.split('.').map(Number);
+    const next = `${major}.${minor! + 1}.0`;
+    expect(outputs).toMatchObject({ released: 'true', bump: 'minor', version: next });
+    expect(pkg.version).toBe(next);
   });
 
   // The release commit is pushed with an app token, which (unlike GITHUB_TOKEN) triggers workflows.
