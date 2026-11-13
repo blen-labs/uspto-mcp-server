@@ -142,23 +142,20 @@ Releases are **continuous** (`.github/workflows/release.yml`): every push to
    release loop.
 3. The `publish` job — holding only `id-token: write`, in the `npm` environment
    (deployments allowed from `main` only) — downloads that exact tarball and
-   **stages** it with `npm stage publish`. It never checks out the repository or
-   installs dependencies. The version goes live only when a maintainer approves it
-   with 2FA: npmjs.com → Staged Packages, or `npm stage approve <stage-id>`
-   (`npm stage list @blen/uspto-mcp-server` shows pending versions). Check the
-   staged tarball against the GitHub Release asset's sha256 before approving
-   (`npm stage download <stage-id>`).
+   publishes it with `npm publish --provenance`. It never checks out the
+   repository or installs dependencies. No manual step: a merge to `main` that
+   passes the gates is on npm a few minutes later.
 4. **Recovery**: `gh workflow run release.yml --ref main -f republish=true`
-   re-runs the gates and stages the *current* version on npm again (no bump,
+   re-runs the gates and publishes the *current* version to npm (no bump,
    no tag) — for when a publish failed after a tag already existed.
 
 Publishing is **tokenless** via [npm Trusted
 Publishing](https://docs.npmjs.com/trusted-publishers) (OIDC): the npm
 package settings register this repo's `release.yml` (and the `npm` environment) as
-a trusted publisher allowed only `npm stage publish`, so no npm token or secret
-exists anywhere and CI alone can never make a version live; the job's
-`id-token: write` permission is what authenticates, and provenance is generated
-automatically. Workflow actions are pinned to commit SHAs; Dependabot
+a trusted publisher (allowed to `npm publish`), so no npm token or secret exists
+anywhere and nothing but this workflow on `main` can publish; the job's
+`id-token: write` permission is what authenticates, and provenance is attached
+(`--provenance`). Workflow actions are pinned to commit SHAs; Dependabot
 (`.github/dependabot.yml`) proposes updates for npm packages, actions and the
 Docker base images. Patched versions of vulnerable transitive dev dependencies are
 pinned with `overrides:` in `pnpm-workspace.yaml`; remove an entry once its parent
@@ -174,7 +171,7 @@ its hand-written `CHANGELOG.md` section (no bump, no release commit), and tags i
 npm only offers trusted-publisher settings for a package that exists, so the very
 first version was staged once by a maintainer from the GitHub Release tarball
 (`npm stage publish <tgz> --access public`, then approved with 2FA); after that,
-the trusted publisher (stage only, environment `npm`) took over.
+the trusted publisher (environment `npm`) took over.
 
 ## Reporting security issues
 
