@@ -237,7 +237,11 @@ Two runners:
   other stdout bytes are treated as untrusted log text. The Node parent owns the
   deadline, kills the process group on every exit path, and resolves only after the
   child has exited (bounded wait), so an execution slot is never released while its
-  process is alive. `memoryMb` is applied with `--v8-flags=--max-old-space-size`.
+  process is alive. `memoryMb` is applied with `--v8-flags=--max-old-space-size`,
+  which bounds the JavaScript heap but not buffers (`ArrayBuffer`, typed arrays).
+  So the supervisor also reads the resident size of its process every 5 ms and exits
+  when the process has grown by more than twice `memoryMb` plus 96 MiB since the
+  execution started; the host reports that exit as `MemoryLimitExceeded`.
 
 Both runners enforce the same **byte budgets** (`src/sandbox/limits.ts`), first
 inside the sandbox — so over-budget data is never transferred — and again on the

@@ -7,6 +7,16 @@ import { log } from '../util/logger.js';
 import { preflight } from './policy.js';
 import { DEFAULT_LIMITS, LOG_LINE_OVERHEAD, LOG_TRUNCATED, LogSink, MAX_ERROR_MESSAGE, boundMessage, checkRpcArgs, finishValue, policyMessage, resultTooLarge, type SandboxLimits } from './limits.js';
 
+/** The supervisor exits with this code when the sandbox process outgrows its memory limit. */
+const MEMORY_EXIT_CODE = 97;
+/**
+ * How far the resident size of the sandbox process may grow during one execution: twice `memoryMb`
+ * plus this allowance. Twice, because the process has two V8 isolates (the supervisor, which
+ * relays every SDK result, and the worker) and the heap flag lets each one reach `memoryMb` before
+ * it must collect garbage. The allowance covers the runtime's own buffers for those messages.
+ */
+const MEMORY_HEADROOM_MB = 96;
+
 /**
  * Deno sandbox.
  *
@@ -16,6 +26,11 @@ import { DEFAULT_LIMITS, LOG_LINE_OVERHEAD, LOG_TRUNCATED, LogSink, MAX_ERROR_ME
  *   → a module Worker that receives the user code by message. Before user code runs, the worker's
  *     ambient globals that could reach the process or the protocol (`Deno`, `postMessage`, `fetch`,
  *     `Worker`, ...) are replaced with `undefined` and `console` is redirected to log messages.
+ *
+ * Memory: V8's heap flag does not count buffers (ArrayBuffer and typed arrays live outside the
+ * JavaScript heap). The supervisor therefore watches the resident size of its whole process and
+ * exits with MEMORY_EXIT_CODE when the growth since the start frame passes the limit. The heap
+ * flag stays as a second guard.
  *
  * Protocol: the supervisor talks to the host over stdin/stdout with one JSON frame per line,
  * prefixed by a random token the supervisor generates and announces before the worker exists.
@@ -62,11 +77,13 @@ export class DenoRunner implements SandboxRunner {
     if (!policy.ok) return fail('PolicyError', policyMessage(policy.errors));
     if (Buffer.byteLength(opts.code, 'utf8') > limits.maxCodeBytes) return fail('CodeTooLarge', `Code exceeds ${limits.maxCodeBytes} bytes.`);
 
+    const memoryMb = Math.max(16, opts.memoryMb ?? 64);
+    const memoryLimitMb = 2 * memoryMb + MEMORY_HEADROOM_MB;
     let child: ChildProcessWithoutNullStreams;
     try {
       child = spawn('deno', [
         'run', '--no-prompt', '--no-config', '--no-lock', '--no-remote', '--no-npm', '--quiet',
-        `--v8-flags=--max-old-space-size=${Math.max(16, opts.memoryMb ?? 64)}`,
+        `--v8-flags=--max-old-space-size=${memoryMb}`,
         DenoRunner.supervisor(),
       ], { stdio: ['pipe', 'pipe', 'pipe'], env: childEnv(), detached: process.platform !== 'win32' });
     } catch (err) {
@@ -112,7 +129,10 @@ export class DenoRunner implements SandboxRunner {
         timeoutMs,
       );
       child.on('error', err => settle({ ok: false, error: { name: 'SpawnError', message: err.message } }));
-      child.on('exit', code => settle({ ok: false, error: { name: 'ExitError', message: `The sandbox exited unexpectedly (code ${code}).` } }));
+      // The exit code carries the reason: a last frame on stdout could arrive after this event.
+      child.on('exit', code => settle({ ok: false, error: code === MEMORY_EXIT_CODE
+        ? { name: 'MemoryLimitExceeded', message: `The program used more memory than its limit (memoryMb: ${memoryMb}). Request fewer records (limit), select fields (fields: [...]), or process the data in smaller steps.` }
+        : { name: 'ExitError', message: `The sandbox exited unexpectedly (code ${code}).` } }));
       if (signal?.aborted) return onAbort();
       signal?.addEventListener('abort', onAbort, { once: true });
 
@@ -175,7 +195,7 @@ export class DenoRunner implements SandboxRunner {
             const m = /^USPTO-SANDBOX ([0-9a-f]{64})$/.exec(line);
             if (!m) return settle({ ok: false, error: { name: 'SandboxProtocolError', message: 'The sandbox did not start correctly.' } });
             token = m[1]!;
-            send({ t: 'start', code: opts.code, bindings: opts.bindings ?? [], limits: {
+            send({ t: 'start', code: opts.code, bindings: opts.bindings ?? [], memoryBytes: memoryLimitMb * 1024 * 1024, limits: {
               maxLogBytes: limits.maxLogBytes, maxLogLines: limits.maxLogLines, logLineOverhead: LOG_LINE_OVERHEAD,
               logTruncated: LOG_TRUNCATED, maxRpcArgBytes: limits.maxRpcArgBytes, maxResultBytes: limits.maxResultBytes,
               maxError: MAX_ERROR_MESSAGE,
@@ -329,6 +349,14 @@ worker.onmessage = (ev) => {
 };
 worker.onerror = (e) => { e.preventDefault(); frame({ t: 'done', ok: false, error: { name: 'Error', message: String(e.message ?? 'Worker error') } }); };
 
+// This thread, which user code cannot reach, ends the process when it has grown past the limit.
+// It ends the process and not the worker: a worker cannot be stopped inside one native call that is
+// still writing to a buffer.
+const watchMemory = (limitBytes) => {
+  const base = Deno.memoryUsage().rss;
+  setInterval(() => { if (!(Deno.memoryUsage().rss - base <= limitBytes)) Deno.exit(${MEMORY_EXIT_CODE}); }, 5);
+};
+
 // Host → supervisor: token-prefixed JSON lines on stdin.
 const dec = new TextDecoder();
 let buf = '';
@@ -341,7 +369,7 @@ for await (const chunk of Deno.stdin.readable) {
     if (!line.startsWith(TOKEN)) continue;
     let msg;
     try { msg = JSON.parse(line.slice(TOKEN.length)); } catch { continue; }
-    if (msg.t === 'start') worker.postMessage({ t: 'start', code: msg.code, bindings: msg.bindings, limits: msg.limits });
+    if (msg.t === 'start') { watchMemory(msg.memoryBytes); worker.postMessage({ t: 'start', code: msg.code, bindings: msg.bindings, limits: msg.limits }); }
     else if (msg.t === 'rpc-result') worker.postMessage(msg);
   }
 }

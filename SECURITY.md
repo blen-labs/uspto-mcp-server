@@ -71,7 +71,11 @@ The `execute` tool runs user-supplied JavaScript with layered defenses:
      `undefined`. Frames to the host are prefixed with a random token the worker
      never sees; all other output is untrusted text. The host owns the deadline,
      kills the process group, and waits for the child to exit before releasing the
-     execution. **Authenticated HTTP serving uses only this runner** (an
+     execution. The heap flag does not count buffers, so the supervisor also ends
+     the process when its resident memory has grown by more than twice `memoryMb`
+     plus 96 MiB during an execution. It checks every 5 ms, so a program can pass
+     that bound by what it writes in one interval.
+     **Authenticated HTTP serving uses only this runner** (an
      in-process runner is refused there, with no fallback).
 3. **Byte budgets**, enforced inside the sandbox before transfer and again on the
    host: code 256 KiB, result 256 KiB, logs 64 KiB / 1,000 lines, SDK-call

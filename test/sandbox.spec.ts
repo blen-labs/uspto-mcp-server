@@ -208,6 +208,27 @@ describe.each([new IsolateRunner(), new DenoRunner()])('$kind runner contract', 
   });
 });
 
+describe.each([new IsolateRunner(), new DenoRunner()])('$kind memory limit', runner => {
+  const run = (code: string) => runner.execute({ code, bindings: [], timeoutMs: 10_000, memoryMb: 64 }, echo);
+  const MIB = 1024 * 1024;
+
+  it('runs a program whose buffers fit in memoryMb', async ({ skip }) => {
+    if (!(await runner.available())) return skip();
+    expect(await run(`const b = new Uint8Array(${8 * MIB}); b.fill(1); return b.length;`)).toMatchObject({ ok: true, value: 8 * MIB });
+  });
+
+  // Buffers live outside the JavaScript heap, so a heap limit alone does not count them.
+  it.for([
+    ['many buffers', `const keep = []; for (let i = 0; i < 16; i++) { const b = new Uint8Array(${64 * MIB}); b.fill(1); keep.push(b); } return keep.length;`],
+    ['one large buffer', `const b = new Uint8Array(${1024 * MIB}); b.fill(1); return b.length;`],
+  ] as const)('stops a program that holds far more than memoryMb in %s', async ([, code], { skip }) => {
+    if (!(await runner.available())) return skip();
+    const res = await run(code);
+    expect(res.ok).toBe(false);
+    if (runner.kind === 'deno') expect(res.error).toMatchObject({ name: 'MemoryLimitExceeded' });
+  });
+});
+
 describe('deno runner isolation (gated on availability)', () => {
   const runner = new DenoRunner();
   const run = (code: string, extra: Record<string, unknown> = {}) =>
