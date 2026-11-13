@@ -355,6 +355,19 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     }
     expect(await (await fetch(`${config.origin}/api/portal/config`)).json()).toMatchObject({ google: true, email: false });
   });
+  // OAuth 2.0 lets a client with one registered URI omit redirect_uri. Better Auth refuses that, so
+  // a signed Connect/Consent query always names one; the portal still answers 400, not 500, without it.
+  it('refuses an authorization request without redirect_uri before the Connect page', async () => {
+    const client = await register();
+    const query = new URLSearchParams({
+      client_id: client.client_id, response_type: 'code', scope: 'uspto:read', resource: `${config.origin}/mcp/account`,
+      code_challenge: createHash('sha256').update(randomToken()).digest('base64url'), code_challenge_method: 'S256', state: randomToken(),
+    });
+    let response = await browser(`${config.origin}/api/auth/oauth2/authorize?${query}`, { headers: { Accept: 'text/html', 'Sec-Fetch-Mode': 'navigate' } });
+    if (response.headers.get('content-type')?.includes('application/json')) response = await browser(new URL((await response.json() as any).url, config.origin));
+    expect(new URL(response.url).pathname).not.toBe('/connect');
+    await response.arrayBuffer();
+  });
   it('validates the separate connection step, preserves saved keys on failure, and allows cancellation', async () => {
     const { oauth_query, state } = await beginAuthorization();
     const payload = { oauth_query, decision: 'continue' };
