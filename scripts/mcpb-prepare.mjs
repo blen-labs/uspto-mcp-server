@@ -36,7 +36,7 @@ export function buildManifest(pkg) {
     ],
     // isolated-vm ships prebuilt binaries for Node 24 and 26 (darwin-arm64, linux-x64/arm64,
     // win32-x64); elsewhere execute uses Deno if it is installed.
-    compatibility: { platforms: ['darwin', 'win32', 'linux'], runtimes: { node: '>=24.11.0' } },
+    compatibility: { platforms: ['darwin', 'win32', 'linux'], runtimes: { node: '^24.11.0 || ^26.0.0' } },
     server: {
       type: 'node',
       entry_point: 'dist/bin.js',
