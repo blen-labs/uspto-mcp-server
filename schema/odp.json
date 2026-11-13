@@ -1,0 +1,743 @@
+{
+  "provenance": {
+    "generatedBy": "scripts/gen-fields.mjs",
+    "generatedAt": "2026-11-13",
+    "sources": {
+      "live": "Captured from the live USPTO APIs with scripts/capture-samples.mjs (see the capture date in schema/*.json provenance)."
+    },
+    "files": {
+      "patents-search.json": {
+        "source": "live",
+        "sha256": "fa4fd6707b6711d18bdad118a4c9ca27a1373db7757ca760ae7a443850b48007"
+      },
+      "patents-documents.json": {
+        "source": "live",
+        "sha256": "1d236ab582793d8f59737c537f0b0529413dc07dcbea17892c124bd56601c5e0"
+      },
+      "patents-status-codes.json": {
+        "source": "live",
+        "sha256": "9d66bb12fa25760069f839677e47df5c80fd63db364bf2bff56aab4112c454b4"
+      },
+      "ptab-proceedings.json": {
+        "source": "live",
+        "sha256": "75ceeff659f881c9e241800b159bf7dca04ad6d0ee1d9ec36ead7ce839298496"
+      },
+      "ptab-decisions.json": {
+        "source": "live",
+        "sha256": "9906ffc534bb0b0e2474e81eb1f95ab9f6b43bea1b089d1353b9fbc873f3e088"
+      },
+      "ptab-documents.json": {
+        "source": "live",
+        "sha256": "d63439ce510c9f1c1edf6b416a18fd54f5c9f2875ab03195e3bed68d68408ee7"
+      },
+      "ptab-appeals.json": {
+        "source": "live",
+        "sha256": "24184ee38b83550bdfe383347f2b5854fe09c260cc2d9981f375129661f94e17"
+      },
+      "ptab-interferences.json": {
+        "source": "live",
+        "sha256": "8b6ec647dbe0620747d48d0481e1cc477cee9cc025af37d8c32a1c45dbbc496c"
+      },
+      "petitions.json": {
+        "source": "live",
+        "sha256": "58ea484fde213fd4a3993c1e7ba4e2ea5dd47c8b66067a21ec9753c3ea44039c"
+      },
+      "office-actions.json": {
+        "source": "live",
+        "sha256": "73b03654970e5d2533b5292e560139e60e45a35c8b7d6149dd6953b74c17cb37"
+      },
+      "oa-text.json": {
+        "source": "live",
+        "sha256": "5fcf2795e92dd0689fad10dd80127731ee5b19747e18c428be328add5d9d2ee8"
+      },
+      "oa-rejections.json": {
+        "source": "live",
+        "sha256": "be346a5f6a979304758128e6e1d0b372f15d3fe82fb453d6c94144af6a51224d"
+      },
+      "oa-citations.json": {
+        "source": "live",
+        "sha256": "7df4bde3e1a138d266d2c70ecd5b1977df3d7efdb8e73bffa2ff63db94cc3819"
+      },
+      "oa-enriched-citations.json": {
+        "source": "live",
+        "sha256": "9f41612a4cc74b46f03adf4b284b3e791d01f2e7a466c084e688de847bf1bf5e"
+      },
+      "bulk.json": {
+        "source": "live",
+        "sha256": "5da7f7ecf573f6451d84830a05f9d5f32f874c71679d6d733f4f73401eecab41"
+      }
+    }
+  },
+  "endpoints": [
+    {
+      "id": "odp.patents.search",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.patents.search(params: { q?, filters?, rangeFilters?, sort?, fields?, facets?, limit?, offset? } | q-string)",
+      "description": "Search patent applications and granted patents (Patent File Wrapper) by keyword, invention title, inventor, applicant, filing or grant date, CPC class, examiner, art unit, status or patent number. Each record holds applicationMetaData plus continuity, assignments, PTA, attorneys and transactions; use fields to return only what you need. Returns { count, patentFileWrapperDataBag: [...] }. Params: q, filters, rangeFilters, sort, fields, facets, limit, offset (see odp.syntax.search).",
+      "example": "await odp.patents.search({ q: 'applicationMetaData.inventionTitle:battery', rangeFilters: { 'applicationMetaData.filingDate': ['2024-01-01', '2024-03-31'] }, sort: 'applicationMetaData.filingDate desc', fields: ['applicationNumberText', 'applicationMetaData.inventionTitle', 'applicationMetaData.filingDate', 'applicationMetaData.patentNumber', 'applicationMetaData.applicationStatusDescriptionText'], facets: ['applicationMetaData.applicationTypeLabelName'], limit: 5 })"
+    },
+    {
+      "id": "odp.patents.get",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.patents.get(applicationNumber)",
+      "description": "Full Patent File Wrapper record for one application (applicationNumber: string \u2014 '17248024', '17/248,024', 'US 17/248,024', or a PCT number like 'PCT/US2024/012345'): applicationMetaData (title, status, dates, patentNumber, inventors, applicants, CPC, examiner, art unit), continuity, assignments, attorney, PTA, transactions (eventDataBag), pgpub/grant document metadata. Large: prefer patents.search with fields when you need a few attributes.",
+      "example": "const r = await odp.patents.get('17/248,024'); return r.patentFileWrapperDataBag[0].applicationMetaData"
+    },
+    {
+      "id": "odp.patents.byPatentNumber",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.patents.byPatentNumber(patentNumber, { fields? })",
+      "description": "Find the application behind a granted patent number ('11,000,000', 'US11000000B2', 'D987654', 'RE49999'). Runs patents.search on applicationMetaData.patentNumber and returns the same shape (count 0 if not found). Use the returned applicationNumberText with the other patents.* methods.",
+      "example": "const r = await odp.patents.byPatentNumber('US 11,234,567 B2', { fields: ['applicationNumberText', 'applicationMetaData.inventionTitle'] }); return r.patentFileWrapperDataBag[0]"
+    },
+    {
+      "id": "odp.patents.metaData",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.patents.metaData(applicationNumber)",
+      "description": "Application metadata only (applicationMetaData: title, status, filing/grant dates, inventors, applicants, CPC, examiner, art unit, entity status) for one patent application (applicationNumber: string \u2014 '17248024', '17/248,024', 'US 17/248,024', or a PCT number like 'PCT/US2024/012345'). Returns { count, patentFileWrapperDataBag: [record] } with only this section populated.",
+      "example": "await odp.patents.metaData('17248024')"
+    },
+    {
+      "id": "odp.patents.adjustment",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.patents.adjustment(applicationNumber)",
+      "description": "Patent Term Adjustment data (patentTermAdjustmentData: A/B/C delays, applicant delay, total adjustment days, PTA history) for one patent application (applicationNumber: string \u2014 '17248024', '17/248,024', 'US 17/248,024', or a PCT number like 'PCT/US2024/012345'). Returns { count, patentFileWrapperDataBag: [record] } with only this section populated.",
+      "example": "await odp.patents.adjustment('17248024')"
+    },
+    {
+      "id": "odp.patents.assignment",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.patents.assignment(applicationNumber)",
+      "description": "Recorded assignments (assignmentBag: reel/frame, conveyance, assignors, assignees, recorded/execution dates) for one patent application (applicationNumber: string \u2014 '17248024', '17/248,024', 'US 17/248,024', or a PCT number like 'PCT/US2024/012345'). Returns { count, patentFileWrapperDataBag: [record] } with only this section populated.",
+      "example": "await odp.patents.assignment('17248024')"
+    },
+    {
+      "id": "odp.patents.attorney",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.patents.attorney(applicationNumber)",
+      "description": "Attorney/agent of record and correspondence address (recordAttorney: customer number, power of attorney, practitioners with registration numbers) for one patent application (applicationNumber: string \u2014 '17248024', '17/248,024', 'US 17/248,024', or a PCT number like 'PCT/US2024/012345'). Returns { count, patentFileWrapperDataBag: [record] } with only this section populated.",
+      "example": "await odp.patents.attorney('17248024')"
+    },
+    {
+      "id": "odp.patents.continuity",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.patents.continuity(applicationNumber)",
+      "description": "Continuity: parentContinuityBag (parents: continuation/divisional/CIP/provisional claims) and childContinuityBag for one patent application (applicationNumber: string \u2014 '17248024', '17/248,024', 'US 17/248,024', or a PCT number like 'PCT/US2024/012345'). Returns { count, patentFileWrapperDataBag: [record] } with only this section populated.",
+      "example": "await odp.patents.continuity('17248024')"
+    },
+    {
+      "id": "odp.patents.foreignPriority",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.patents.foreignPriority(applicationNumber)",
+      "description": "Foreign priority claims (foreignPriorityBag: country, application number, filing date) for one patent application (applicationNumber: string \u2014 '17248024', '17/248,024', 'US 17/248,024', or a PCT number like 'PCT/US2024/012345'). Returns { count, patentFileWrapperDataBag: [record] } with only this section populated.",
+      "example": "await odp.patents.foreignPriority('17248024')"
+    },
+    {
+      "id": "odp.patents.transactions",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.patents.transactions(applicationNumber)",
+      "description": "Prosecution transaction history (eventDataBag: eventCode, eventDescriptionText, eventDate) \u2014 the file-wrapper timeline for one patent application (applicationNumber: string \u2014 '17248024', '17/248,024', 'US 17/248,024', or a PCT number like 'PCT/US2024/012345'). Returns { count, patentFileWrapperDataBag: [record] } with only this section populated.",
+      "example": "await odp.patents.transactions('17248024')"
+    },
+    {
+      "id": "odp.patents.documents",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.patents.documents(applicationNumber, { documentCodes?: string | string[], officialDateFrom?: 'YYYY-MM-DD', officialDateTo? })",
+      "description": "List the documents in an application's file wrapper (applicationNumber: string \u2014 '17248024', '17/248,024', 'US 17/248,024', or a PCT number like 'PCT/US2024/012345'): documentBag[] with documentIdentifier, documentCode (e.g. CTNF non-final rejection, CTFR final rejection, NOA notice of allowance, CLM claims, SPEC, ABST, REM applicant remarks, IDS), documentCodeDescriptionText, officialDate, and downloadOptionBag[] (PDF/XML/DOCX URLs + page counts). Downloads themselves are not available in the sandbox; return the URLs. Counts against the separate 1.2M/week documents quota.",
+      "example": "const r = await odp.patents.documents('17248024', { documentCodes: ['CTNF', 'CTFR', 'NOA'] }); return r.documentBag.map(d => ({ code: d.documentCode, date: d.officialDate, desc: d.documentCodeDescriptionText, pages: d.downloadOptionBag?.[0]?.pageTotalQuantity }))"
+    },
+    {
+      "id": "odp.patents.associatedDocuments",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.patents.associatedDocuments(applicationNumber)",
+      "description": "Associated pre-grant publication and grant full-text documents (pgpubDocumentMetaData / grantDocumentMetaData: XML file names, product identifiers, download URIs in the bulk XML datasets) for one patent application (applicationNumber: string \u2014 '17248024', '17/248,024', 'US 17/248,024', or a PCT number like 'PCT/US2024/012345'). Returns { count, patentFileWrapperDataBag: [record] } with only this section populated.",
+      "example": "await odp.patents.associatedDocuments('17248024')"
+    },
+    {
+      "id": "odp.patents.statusCodes",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.patents.statusCodes({ q?, offset?, limit? } | q-string)",
+      "description": "Look up application status codes and descriptions (statusCodeBag: applicationStatusCode, applicationStatusDescriptionText), e.g. to translate applicationMetaData.applicationStatusCode or to find the code for 'Patented Case' (150) or 'Abandoned'.",
+      "example": "await odp.patents.statusCodes({ q: 'applicationStatusDescriptionText:abandoned', limit: 50 })"
+    },
+    {
+      "id": "odp.ptab.proceedings.search",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.ptab.proceedings.search(params: { q?, filters?, rangeFilters?, sort?, fields?, facets?, limit?, offset? } | q-string)",
+      "description": "Search PTAB AIA trial proceedings (IPR, PGR, CBM, DER): trialNumber, trialMetaData (trialTypeCode, trialStatusCategory, petitionFilingDate, institutionDecisionDate, terminationDate), patentOwnerData (patentNumber, applicationNumberText, technology center), regularPetitionerData (realPartyInInterestName, counselName). Returns { count, patentTrialProceedingDataBag: [...] }. Params: q, filters, rangeFilters, sort, fields, facets, limit, offset (see odp.syntax.search).",
+      "example": "await odp.ptab.proceedings.search({ q: 'patentOwnerData.patentNumber:9876543', fields: ['trialNumber', 'trialMetaData.trialTypeCode', 'trialMetaData.trialStatusCategory', 'trialMetaData.petitionFilingDate', 'regularPetitionerData.realPartyInInterestName'] })"
+    },
+    {
+      "id": "odp.ptab.proceedings.get",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.ptab.proceedings.get(trialNumber)",
+      "description": "One PTAB trial proceeding by trial number (e.g. 'IPR2021-01599', 'PGR2023-00012'). Returns { patentTrialProceedingDataBag: [record] }.",
+      "example": "const t = await odp.ptab.proceedings.search({ fields: ['trialNumber'], limit: 1 }); return await odp.ptab.proceedings.get(t.patentTrialProceedingDataBag[0].trialNumber)"
+    },
+    {
+      "id": "odp.ptab.decisions.search",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.ptab.decisions.search(params: { q?, filters?, rangeFilters?, sort?, fields?, facets?, limit?, offset? } | q-string)",
+      "description": "Search PTAB trial decisions (institution decisions, final written decisions, rehearing): decisionData (decisionTypeCategory, trialOutcomeCategory, decisionIssueDate, statuteAndRuleBag), documentData (documentName, documentTitleText, documentOCRText = full OCR text, fileDownloadURI), trialMetaData, patentOwnerData, regularPetitionerData. Returns { count, patentTrialDocumentDataBag: [...] }. Params: q, filters, rangeFilters, sort, fields, facets, limit, offset (see odp.syntax.search).",
+      "example": "await odp.ptab.decisions.search({ rangeFilters: { 'decisionData.decisionIssueDate': ['2024-01-01', '2024-12-31'] }, facets: ['decisionData.trialOutcomeCategory'], fields: ['trialNumber', 'decisionData', 'documentData.documentTitleText', 'patentOwnerData.patentNumber'], limit: 10 })"
+    },
+    {
+      "id": "odp.ptab.decisions.get",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.ptab.decisions.get(documentIdentifier)",
+      "description": "One PTAB trial decision document by documentIdentifier (from decisions.search / byTrial). Includes documentData.documentOCRText (full text).",
+      "example": "const s = await odp.ptab.decisions.search({ fields: ['documentData.documentIdentifier'], limit: 1 }); const d = await odp.ptab.decisions.get(s.patentTrialDocumentDataBag[0].documentData.documentIdentifier); return d.patentTrialDocumentDataBag[0].documentData.documentOCRText.slice(0, 1500)"
+    },
+    {
+      "id": "odp.ptab.decisions.byTrial",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.ptab.decisions.byTrial(trialNumber)",
+      "description": "All decision documents in one PTAB trial (e.g. 'IPR2021-01599'). Returns { count: 0, patentTrialDocumentDataBag: [] } when the trial has no decisions yet.",
+      "example": "const s = await odp.ptab.decisions.search({ fields: ['trialNumber'], limit: 1 }); const r = await odp.ptab.decisions.byTrial(s.patentTrialDocumentDataBag[0].trialNumber); return r.patentTrialDocumentDataBag.map(d => ({ id: d.documentData.documentIdentifier, type: d.decisionData?.decisionTypeCategory, outcome: d.decisionData?.trialOutcomeCategory, date: d.decisionData?.decisionIssueDate }))"
+    },
+    {
+      "id": "odp.ptab.documents.search",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.ptab.documents.search(params: { q?, filters?, rangeFilters?, sort?, fields?, facets?, limit?, offset? } | q-string)",
+      "description": "Search all PTAB trial papers and exhibits (petitions, patent owner responses, exhibits, orders): documentData (documentCategory, filingPartyCategory PETITIONER/PATENT OWNER/BOARD, documentTitleText, documentOCRText, documentFilingDate, fileDownloadURI). Returns { count, patentTrialDocumentDataBag: [...] }. Params: q, filters, rangeFilters, sort, fields, facets, limit, offset (see odp.syntax.search).",
+      "example": "const s = await odp.ptab.proceedings.search({ fields: ['trialNumber'], limit: 1 }); return await odp.ptab.documents.search({ q: `trialNumber:${s.patentTrialProceedingDataBag[0].trialNumber}`, fields: ['documentData.documentIdentifier', 'documentData.documentTitleText', 'documentData.documentFilingDate', 'documentData.filingPartyCategory'], limit: 25 })"
+    },
+    {
+      "id": "odp.ptab.documents.get",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.ptab.documents.get(documentIdentifier)",
+      "description": "One PTAB trial document by documentIdentifier, with documentOCRText.",
+      "example": "const s = await odp.ptab.documents.search({ fields: ['documentData.documentIdentifier'], limit: 1 }); const d = await odp.ptab.documents.get(s.patentTrialDocumentDataBag[0].documentData.documentIdentifier); return d.patentTrialDocumentDataBag[0].documentData.documentTitleText"
+    },
+    {
+      "id": "odp.ptab.documents.byTrial",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.ptab.documents.byTrial(trialNumber)",
+      "description": "All papers and exhibits in one PTAB trial. Can be large (OCR text included): prefer documents.search with fields when you only need the list.",
+      "example": "const s = await odp.ptab.proceedings.search({ fields: ['trialNumber'], limit: 1 }); const r = await odp.ptab.documents.byTrial(s.patentTrialProceedingDataBag[0].trialNumber); return r.patentTrialDocumentDataBag.map(d => d.documentData.documentTitleText)"
+    },
+    {
+      "id": "odp.ptab.appeals.search",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.ptab.appeals.search(params: { q?, filters?, rangeFilters?, sort?, fields?, facets?, limit?, offset? } | q-string)",
+      "description": "Search PTAB ex parte appeal decisions (appeals from examiner rejections): appealNumber, appealMetaData, appellantData (applicationNumberText, patentNumber, technology center), decisionData (appealOutcomeCategory e.g. Affirmed / Reversed, decisionIssueDate, issueTypeBag e.g. '103', statuteAndRuleBag), documentData (documentOCRText). Returns { count, patentAppealDataBag: [...] }. Params: q, filters, rangeFilters, sort, fields, facets, limit, offset (see odp.syntax.search).",
+      "example": "await odp.ptab.appeals.search({ q: 'decisionData.appealOutcomeCategory:Reversed', fields: ['appealNumber', 'decisionData.decisionIssueDate', 'appellantData.applicationNumberText'], sort: 'decisionData.decisionIssueDate desc', limit: 10 })"
+    },
+    {
+      "id": "odp.ptab.appeals.get",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.ptab.appeals.get(documentIdentifier)",
+      "description": "One PTAB appeal decision document by documentIdentifier.",
+      "example": "const s = await odp.ptab.appeals.search({ fields: ['documentData.documentIdentifier'], limit: 1 }); return await odp.ptab.appeals.get(s.patentAppealDataBag[0].documentData.documentIdentifier)"
+    },
+    {
+      "id": "odp.ptab.appeals.byAppeal",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.ptab.appeals.byAppeal(appealNumber)",
+      "description": "All decisions for one appeal number (e.g. '2023001234').",
+      "example": "const s = await odp.ptab.appeals.search({ fields: ['appealNumber'], limit: 1 }); return await odp.ptab.appeals.byAppeal(s.patentAppealDataBag[0].appealNumber)"
+    },
+    {
+      "id": "odp.ptab.interferences.search",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.ptab.interferences.search(params: { q?, filters?, rangeFilters?, sort?, fields?, facets?, limit?, offset? } | q-string)",
+      "description": "Search PTAB interference decisions (pre-AIA priority contests): interferenceNumber, interferenceMetaData, seniorPartyData, juniorPartyData, additionalPartyDataBag, documentData. Returns { count, patentInterferenceDataBag: [...] }. Params: q, filters, rangeFilters, sort, fields, facets, limit, offset (see odp.syntax.search).",
+      "example": "await odp.ptab.interferences.search({ fields: ['interferenceNumber', 'documentData.documentIdentifier', 'documentData.documentTitleText'], limit: 10 })"
+    },
+    {
+      "id": "odp.ptab.interferences.get",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.ptab.interferences.get(documentIdentifier)",
+      "description": "One interference decision document by documentIdentifier.",
+      "example": "const s = await odp.ptab.interferences.search({ fields: ['documentData.documentIdentifier'], limit: 1 }); return await odp.ptab.interferences.get(s.patentInterferenceDataBag[0].documentData.documentIdentifier)"
+    },
+    {
+      "id": "odp.ptab.interferences.byInterference",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.ptab.interferences.byInterference(interferenceNumber)",
+      "description": "All decisions for one interference number (e.g. '105970').",
+      "example": "const s = await odp.ptab.interferences.search({ fields: ['interferenceNumber'], limit: 1 }); return await odp.ptab.interferences.byInterference(s.patentInterferenceDataBag[0].interferenceNumber)"
+    },
+    {
+      "id": "odp.petitions.search",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.petitions.search(params: { q?, filters?, rangeFilters?, sort?, fields?, facets?, limit?, offset? } | q-string)",
+      "description": "Search final petition decisions from the Office of Petitions and Technology Centers (revival of abandoned applications, reinstated patents after late maintenance fees, delayed priority claims, make special, PTA reconsideration...): applicationNumberText, patentNumber, decisionPetitionTypeCode + decisionPetitionTypeCodeDescriptionText (what was petitioned, often with the 37 CFR rule), decidedPetitionTypeCode + decidedPetitionTypeCodeDescriptionText (outcome, e.g. GRANTED / DENIED / DISMISSED), petitionMailDate, decisionDate, decisionMailDate, finalDecidingOfficeName, technologyCenter, groupArtUnitNumber, ocrSearchText (decision text), documentBag. Returns { count, petitionDecisionDataBag: [...] }. Params: q, filters, rangeFilters, sort, fields, facets, limit, offset (see odp.syntax.search).",
+      "example": "await odp.petitions.search({ q: 'decidedPetitionTypeCodeDescriptionText:GRANTED', rangeFilters: { decisionDate: ['2025-01-01', '2025-12-31'] }, facets: ['decisionPetitionTypeCodeDescriptionText'], fields: ['petitionDecisionRecordIdentifier', 'applicationNumberText', 'decisionPetitionTypeCodeDescriptionText', 'decisionDate'], limit: 10 })"
+    },
+    {
+      "id": "odp.petitions.get",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.petitions.get(petitionDecisionRecordIdentifier)",
+      "description": "One petition decision by petitionDecisionRecordIdentifier (from petitions.search), including documentBag (decision documents with download URLs) and ocrSearchText.",
+      "example": "const s = await odp.petitions.search({ fields: ['petitionDecisionRecordIdentifier'], limit: 1 }); const r = await odp.petitions.get(s.petitionDecisionDataBag[0].petitionDecisionRecordIdentifier); return r.petitionDecisionDataBag[0].decidedPetitionTypeCodeDescriptionText"
+    },
+    {
+      "id": "odp.officeActions.search",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.officeActions.search(params: { q?, filters?, rangeFilters?, sort?, fields?, facets?, limit?, offset? } | q-string)",
+      "description": "Search office actions (full text) issued by examiners for public applications filed 2001+: applicationNumberText, documentCode (CTNF non-final, CTFR final, CTRS restriction, NOA...), documentCodeDescriptionText, submissionDate, groupArtUnitNumber, patentNumber, rejectionTypeBag (statute sections as strings: '101', '102', '103', '112'), officeActionText, officeActionRecordIdentifier. This is the current Office Action Search API; prefer it over the legacy odp.oa.* DSAPI endpoints. Returns { count, officeActionDataBag: [...] }. Params: q, filters, rangeFilters, sort, fields, facets, limit, offset (see odp.syntax.search).",
+      "example": "await odp.officeActions.search({ q: 'documentCode:CTNF AND rejectionTypeBag:103', fields: ['officeActionRecordIdentifier', 'applicationNumberText', 'submissionDate', 'rejectionTypeBag'], sort: 'submissionDate desc', limit: 10 })"
+    },
+    {
+      "id": "odp.officeActions.get",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.officeActions.get(officeActionRecordIdentifier)",
+      "description": "One office action record by officeActionRecordIdentifier (from officeActions.search), including officeActionText.",
+      "example": "const s = await odp.officeActions.search({ fields: ['officeActionRecordIdentifier'], limit: 1 }); return await odp.officeActions.get(s.officeActionDataBag[0].officeActionRecordIdentifier)"
+    },
+    {
+      "id": "odp.officeActions.text",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.officeActions.text(officeActionRecordIdentifier)",
+      "description": "The full text of one office action as a plain string. Long: slice or search it in the sandbox and return only the relevant passages.",
+      "example": "const s = await odp.officeActions.search({ q: 'rejectionTypeBag:103', fields: ['officeActionRecordIdentifier'], limit: 1 }); const t = await odp.officeActions.text(s.officeActionDataBag[0].officeActionRecordIdentifier); const i = t.indexOf('103'); return t.slice(Math.max(0, i - 200), i + 1500)"
+    },
+    {
+      "id": "odp.oa.text.search",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.oa.text.search(criteria: Lucene/Solr query string (default '*:*'), { start?: number, rows?: 1-1000 (default 25) })",
+      "description": "LEGACY Office Action DSAPI \u2014 office action full text, with section-level fields (e.g. bodyText, sections.*). Returns { response: { numFound, start, docs: [...] } }. Criteria uses this dataset's own field names (see odp.oa.text.fields and odp.fields.oa.text); application numbers are digits only, e.g. patentApplicationNumber:16123456.",
+      "example": "await odp.oa.text.search('patentApplicationNumber:16123456', { rows: 10 })"
+    },
+    {
+      "id": "odp.oa.text.fields",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.oa.text.fields()",
+      "description": "LEGACY DSAPI field list and dataset info for odp.oa.text.search (field names usable in criteria).",
+      "example": "await odp.oa.text.fields()"
+    },
+    {
+      "id": "odp.oa.citations.search",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.oa.citations.search(criteria: Lucene/Solr query string (default '*:*'), { start?: number, rows?: 1-1000 (default 25) })",
+      "description": "LEGACY Office Action DSAPI \u2014 references cited by examiners in office actions (form PTO-892 and in-text citations). Returns { response: { numFound, start, docs: [...] } }. Criteria uses this dataset's own field names (see odp.oa.citations.fields and odp.fields.oa.citations); application numbers are digits only, e.g. patentApplicationNumber:16123456.",
+      "example": "await odp.oa.citations.search('patentApplicationNumber:16123456')"
+    },
+    {
+      "id": "odp.oa.citations.fields",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.oa.citations.fields()",
+      "description": "LEGACY DSAPI field list and dataset info for odp.oa.citations.search (field names usable in criteria).",
+      "example": "await odp.oa.citations.fields()"
+    },
+    {
+      "id": "odp.oa.rejections.search",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.oa.rejections.search(criteria: Lucene/Solr query string (default '*:*'), { start?: number, rows?: 1-1000 (default 25) })",
+      "description": "LEGACY Office Action DSAPI \u2014 per-claim rejection data parsed from office actions (101/102/103/112 flags, rejected claims, action type). Returns { response: { numFound, start, docs: [...] } }. Criteria uses this dataset's own field names (see odp.oa.rejections.fields and odp.fields.oa.rejections); application numbers are digits only, e.g. patentApplicationNumber:16123456.",
+      "example": "await odp.oa.rejections.search('hasRej103:1', { rows: 10 })"
+    },
+    {
+      "id": "odp.oa.rejections.fields",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.oa.rejections.fields()",
+      "description": "LEGACY DSAPI field list and dataset info for odp.oa.rejections.search (field names usable in criteria).",
+      "example": "await odp.oa.rejections.fields()"
+    },
+    {
+      "id": "odp.oa.enrichedCitations.search",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.oa.enrichedCitations.search(criteria: Lucene/Solr query string (default '*:*'), { start?: number, rows?: 1-1000 (default 25) })",
+      "description": "LEGACY Office Action DSAPI \u2014 enriched cited-reference metadata (cited document, relevant claims/passages, examiner vs applicant citation). Returns { response: { numFound, start, docs: [...] } }. Criteria uses this dataset's own field names (see odp.oa.enrichedCitations.fields and odp.fields.oa.enrichedCitations); application numbers are digits only, e.g. patentApplicationNumber:16123456.",
+      "example": "await odp.oa.enrichedCitations.search('patentApplicationNumber:16123456')"
+    },
+    {
+      "id": "odp.oa.enrichedCitations.fields",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.oa.enrichedCitations.fields()",
+      "description": "LEGACY DSAPI field list and dataset info for odp.oa.enrichedCitations.search (field names usable in criteria).",
+      "example": "await odp.oa.enrichedCitations.fields()"
+    },
+    {
+      "id": "odp.bulk.search",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.bulk.search(params: { q?, filters?, rangeFilters?, sort?, fields?, facets?, limit?, offset? } | q-string)",
+      "description": "Search the bulk dataset catalog (bulkDataProductBag[]: productIdentifier e.g. PTGRXML patent grant full text, TRTDXFAP trademark full text, OACT office action weekly archives, plus PatentsView tables; productTitleText, productDescriptionText, productFrequencyText, date range, file counts). At most one filter and one rangeFilter (GET-only endpoint); put further conditions in q. Catalog metadata only: bulk files cannot be downloaded from the sandbox.",
+      "example": "await odp.bulk.search({ q: 'patent grant full text', fields: ['productIdentifier', 'productTitleText', 'productFrequencyText'], limit: 20 })"
+    },
+    {
+      "id": "odp.bulk.get",
+      "kind": "endpoint",
+      "binding": "odp",
+      "signature": "odp.bulk.get(productIdentifier, { fileDataFromDate?, fileDataToDate?, offset?, limit?, includeFiles?: boolean, latest?: boolean })",
+      "description": "One bulk dataset product with its file list (productFileBag.fileDataBag[]: fileName, fileSize, fileDataFromDate/ToDate, fileReleaseDate, fileDownloadURI). Use latest: true or a date window to keep the file list small. Downloads are not available in the sandbox; return the URIs.",
+      "example": "await odp.bulk.get('PTGRXML', { latest: true })"
+    }
+  ],
+  "fields": [
+    {
+      "id": "odp.syntax.search",
+      "kind": "field",
+      "binding": "odp",
+      "description": "ODP search syntax (patents, ptab, petitions, officeActions, bulk). q is Lucene-style over dotted field paths: term ('battery'), field ('applicationMetaData.firstInventorName:Smith'), exact phrase ('\"neural network\"'), boolean AND/OR/NOT with parentheses, wildcard ('patentNumber:8894*'), range ('applicationMetaData.filingDate:[2024-01-01 TO 2024-06-30]'). A bare q searches all text fields. Combine with filters (exact values), rangeFilters (dates/numbers), sort, fields (projection), facets (counts per value), limit (page size) and offset. Responses carry count (total matches) and requestIdentifier.",
+      "example": "await odp.patents.search({ q: 'applicationMetaData.cpcClassificationBag:H01M10*', facets: ['applicationMetaData.applicationStatusDescriptionText'], limit: 1 })"
+    },
+    {
+      "id": "odp.syntax.applicationNumber",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Application numbers: 8 digits ('17248024'; display form '17/248,024'). Series codes 29/ are design applications, 60/\u201363/ provisional, 90/ ex parte reexam, 95/ inter partes reexam. PCT numbers: 'PCTUS2024012345' (display 'PCT/US2024/012345'). Patent numbers are different identifiers: resolve them with odp.patents.byPatentNumber. TSDR trademark numbers are unrelated (see tsdr.*).",
+      "example": "await odp.patents.metaData('29/876,543')"
+    },
+    {
+      "id": "odp.limits",
+      "kind": "field",
+      "binding": "odp",
+      "description": "USPTO ODP rate limits: one request in flight per API key (burst 1; concurrent calls get 429), 4\u201315 requests/second depending on endpoint, 5,000,000 metadata calls and 1,200,000 file-wrapper document calls per week per key (reset Sunday 00:00 UTC). This server queues calls one at a time per key and caps calls per execute, so Promise.all does not speed things up: fetch fewer, larger pages and use fields to trim records. A 429 surfaces as RateLimited; do not retry immediately (USPTO asks for at least 5 seconds)."
+    },
+    {
+      "id": "odp.documentCodes",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Common file-wrapper document codes (documentCode in odp.patents.documents and odp.officeActions): CTNF non-final rejection; CTFR final rejection; NOA notice of allowance; CLM claims; SPEC specification; ABST abstract; DRW drawings; REM applicant remarks; IDS information disclosure statement. Codes vary; read documentCodeDescriptionText, or facet on documentCode to see what an application or search actually contains."
+    },
+    {
+      "id": "odp.ptab.trialTypes",
+      "kind": "field",
+      "binding": "odp",
+      "description": "PTAB trial number prefixes / trialMetaData.trialTypeCode: IPR inter partes review, PGR post-grant review, CBM covered business method review, DER derivation. Trial numbers look like 'IPR2021-01599'. Ex parte appeals (odp.ptab.appeals) use appealNumber like '2023001234'; interferences use 6-digit interference numbers."
+    },
+    {
+      "id": "odp.fields.patents",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.patents.search / odp.patents.get (and the per-application sub-resources), under patentFileWrapperDataBag[]. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: applicationNumberText; lastIngestionDateTime (e.g. \"2026-11-11T03:33:03\")."
+    },
+    {
+      "id": "odp.fields.patents.applicationMetaData",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.patents.search / odp.patents.get (and the per-application sub-resources), under patentFileWrapperDataBag[].applicationMetaData. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: applicationMetaData.applicantBag.applicantNameText; applicationMetaData.applicantBag.correspondenceAddressBag.cityName; applicationMetaData.applicantBag.correspondenceAddressBag.countryCode; applicationMetaData.applicantBag.correspondenceAddressBag.countryName; applicationMetaData.applicantBag.correspondenceAddressBag.geographicRegionCode; applicationMetaData.applicantBag.correspondenceAddressBag.geographicRegionName; applicationMetaData.applicantBag.correspondenceAddressBag.nameLineOneText; applicationMetaData.applicantBag.correspondenceAddressBag.postalAddressCategory; applicationMetaData.applicationConfirmationNumber (e.g. \"4326\"); applicationMetaData.applicationStatusCode (e.g. \"150\"); applicationMetaData.applicationStatusDate (e.g. \"2026-10-28\"); applicationMetaData.applicationStatusDescriptionText; applicationMetaData.applicationTypeCategory (e.g. \"REGULAR\"); applicationMetaData.applicationTypeCode (e.g. \"UTL\"); applicationMetaData.applicationTypeLabelName; applicationMetaData.class (e.g. \"348\"); applicationMetaData.cpcClassificationBag (e.g. \"G02B  13/0065\"); applicationMetaData.customerNumber; applicationMetaData.docketNumber (e.g. \"COREPH-0123 US CON15\"); applicationMetaData.earliestPublicationDate (e.g. \"2026-09-24\"); applicationMetaData.earliestPublicationNumber (e.g. \"US20260287865A1\"); applicationMetaData.effectiveFilingDate (e.g. \"2026-05-19\"); applicationMetaData.entityStatusData.businessEntityStatusCategory (e.g. \"Regular Undiscounted\"); applicationMetaData.entityStatusData.smallEntityStatusIndicator (e.g. \"false\"); applicationMetaData.examinerNameText; applicationMetaData.filingDate (e.g. \"2026-05-19\"); applicationMetaData.firstApplicantName; applicationMetaData.firstInventorName; applicationMetaData.firstInventorToFileIndicator; applicationMetaData.grantDate (e.g. \"2026-11-10\"); applicationMetaData.groupArtUnitNumber (e.g. \"2638\"); applicationMetaData.inventionTitle (e.g. \"ZOOM DUAL-APERTURE CAMERA WITH FOLDED...\"); applicationMetaData.inventorBag.correspondenceAddressBag.cityName; applicationMetaData.inventorBag.correspondenceAddressBag.countryCode; applicationMetaData.inventorBag.correspondenceAddressBag.countryName; applicationMetaData.inventorBag.correspondenceAddressBag.geographicRegionCode; applicationMetaData.inventorBag.correspondenceAddressBag.geographicRegionName; applicationMetaData.inventorBag.correspondenceAddressBag.nameLineOneText; applicationMetaData.inventorBag.correspondenceAddressBag.postalAddressCategory; applicationMetaData.inventorBag.firstName; applicationMetaData.inventorBag.inventorNameText; applicationMetaData.inventorBag.lastName; applicationMetaData.inventorBag.middleName; applicationMetaData.nationalStageIndicator (e.g. \"false\"); applicationMetaData.patentNumber (e.g. \"12791838\"); applicationMetaData.publicationCategoryBag (e.g. \"Granted/Issued\"); applicationMetaData.publicationDateBag (e.g. \"2026-09-24\"); applicationMetaData.publicationSequenceNumberBag (e.g. \"0287865\"); applicationMetaData.subclass (e.g. \"262\"); applicationMetaData.uspcSymbolText."
+    },
+    {
+      "id": "odp.fields.patents.assignmentBag",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.patents.search / odp.patents.get (and the per-application sub-resources), under patentFileWrapperDataBag[].assignmentBag. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: assignmentBag.assigneeBag.assigneeAddress.addressLineOneText; assignmentBag.assigneeBag.assigneeAddress.addressLineTwoText; assignmentBag.assigneeBag.assigneeAddress.cityName; assignmentBag.assigneeBag.assigneeAddress.countryName; assignmentBag.assigneeBag.assigneeAddress.geographicRegionCode; assignmentBag.assigneeBag.assigneeAddress.geographicRegionName; assignmentBag.assigneeBag.assigneeAddress.ictCountryCode; assignmentBag.assigneeBag.assigneeAddress.ictStateCode; assignmentBag.assigneeBag.assigneeAddress.postalCode; assignmentBag.assigneeBag.assigneeNameText; assignmentBag.assignmentDocumentLocationURI (e.g. \"https://assignmentcenter.uspto.gov/ip...\"); assignmentBag.assignmentMailedDate (e.g. \"2026-05-20\"); assignmentBag.assignmentReceivedDate (e.g. \"2026-05-19\"); assignmentBag.assignmentRecordedDate (e.g. \"2026-05-19\"); assignmentBag.assignorBag.assignorName; assignmentBag.assignorBag.executionDate (e.g. \"2026-05-01\"); assignmentBag.attorneyDocketNumber; assignmentBag.conveyanceText; assignmentBag.correspondenceAddress.addressLineOneText; assignmentBag.correspondenceAddress.addressLineThreeText; assignmentBag.correspondenceAddress.addressLineTwoText; assignmentBag.correspondenceAddress.correspondentNameText; assignmentBag.frameNumber (e.g. \"880\"); assignmentBag.imageAvailableStatusCode (e.g. \"true\"); assignmentBag.pageTotalQuantity (e.g. \"2\"); assignmentBag.reelAndFrameNumber (e.g. \"074689/0880\"); assignmentBag.reelNumber (e.g. \"74689\")."
+    },
+    {
+      "id": "odp.fields.patents.childContinuityBag",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.patents.search / odp.patents.get (and the per-application sub-resources), under patentFileWrapperDataBag[].childContinuityBag. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: childContinuityBag.childApplicationFilingDate (e.g. \"2026-07-08\"); childContinuityBag.childApplicationNumberText; childContinuityBag.childApplicationStatusCode (e.g. \"19\"); childContinuityBag.childApplicationStatusDescriptionText; childContinuityBag.claimParentageTypeCode (e.g. \"CON\"); childContinuityBag.claimParentageTypeCodeDescriptionText; childContinuityBag.firstInventorToFileIndicator; childContinuityBag.parentApplicationNumberText."
+    },
+    {
+      "id": "odp.fields.patents.correspondenceAddressBag",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.patents.search / odp.patents.get (and the per-application sub-resources), under patentFileWrapperDataBag[].correspondenceAddressBag. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: correspondenceAddressBag.addressLineOneText; correspondenceAddressBag.addressLineTwoText; correspondenceAddressBag.cityName; correspondenceAddressBag.countryCode; correspondenceAddressBag.countryName; correspondenceAddressBag.geographicRegionCode; correspondenceAddressBag.geographicRegionName; correspondenceAddressBag.nameLineOneText; correspondenceAddressBag.postalCode."
+    },
+    {
+      "id": "odp.fields.patents.eventDataBag",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.patents.search / odp.patents.get (and the per-application sub-resources), under patentFileWrapperDataBag[].eventDataBag. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: eventDataBag.eventCode (e.g. \"EML_NTR\"); eventDataBag.eventDate (e.g. \"2026-11-10\"); eventDataBag.eventDescriptionText."
+    },
+    {
+      "id": "odp.fields.patents.foreignPriorityBag",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.patents.search / odp.patents.get (and the per-application sub-resources), under patentFileWrapperDataBag[].foreignPriorityBag. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: foreignPriorityBag.applicationNumberText; foreignPriorityBag.filingDate (e.g. \"2021-09-07\"); foreignPriorityBag.ipOfficeName."
+    },
+    {
+      "id": "odp.fields.patents.grantDocumentMetaData",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.patents.search / odp.patents.get (and the per-application sub-resources), under patentFileWrapperDataBag[].grantDocumentMetaData. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: grantDocumentMetaData.fileCreateDateTime (e.g. \"2026-11-10T09:10:29\"); grantDocumentMetaData.fileLocationURI (e.g. \"https://api.uspto.gov/api/v1/datasets...\"); grantDocumentMetaData.productIdentifier (e.g. \"PTGRXML\"); grantDocumentMetaData.xmlFileName; grantDocumentMetaData.zipFileName."
+    },
+    {
+      "id": "odp.fields.patents.parentContinuityBag",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.patents.search / odp.patents.get (and the per-application sub-resources), under patentFileWrapperDataBag[].parentContinuityBag. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: parentContinuityBag.childApplicationNumberText; parentContinuityBag.claimParentageTypeCode (e.g. \"CON\"); parentContinuityBag.claimParentageTypeCodeDescriptionText; parentContinuityBag.firstInventorToFileIndicator; parentContinuityBag.parentApplicationFilingDate (e.g. \"2024-09-15\"); parentContinuityBag.parentApplicationNumberText; parentContinuityBag.parentApplicationStatusCode (e.g. \"150\"); parentContinuityBag.parentApplicationStatusDescriptionText; parentContinuityBag.parentPatentNumber (e.g. \"12663618\")."
+    },
+    {
+      "id": "odp.fields.patents.patentTermAdjustmentData",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.patents.search / odp.patents.get (and the per-application sub-resources), under patentFileWrapperDataBag[].patentTermAdjustmentData. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: patentTermAdjustmentData.aDelayQuantity (e.g. \"0\"); patentTermAdjustmentData.adjustmentTotalQuantity (e.g. \"0\"); patentTermAdjustmentData.applicantDayDelayQuantity; patentTermAdjustmentData.bDelayQuantity (e.g. \"0\"); patentTermAdjustmentData.cDelayQuantity (e.g. \"0\"); patentTermAdjustmentData.ipOfficeAdjustmentDelayQuantity (e.g. \"0\"); patentTermAdjustmentData.nonOverlappingDayDelayQuantity (e.g. \"0\"); patentTermAdjustmentData.overlappingDayQuantity (e.g. \"0\"); patentTermAdjustmentData.patentTermAdjustmentHistoryDataBag.applicantDayDelayQuantity; patentTermAdjustmentData.patentTermAdjustmentHistoryDataBag.eventDate (e.g. \"2026-11-10\"); patentTermAdjustmentData.patentTermAdjustmentHistoryDataBag.eventDescriptionText; patentTermAdjustmentData.patentTermAdjustmentHistoryDataBag.eventSequenceNumber (e.g. \"69.5\"); patentTermAdjustmentData.patentTermAdjustmentHistoryDataBag.ipOfficeDayDelayQuantity (e.g. \"0\"); patentTermAdjustmentData.patentTermAdjustmentHistoryDataBag.originatingEventSequenceNumber (e.g. \"0.5\"); patentTermAdjustmentData.patentTermAdjustmentHistoryDataBag.ptaPTECode (e.g. \"PTA\")."
+    },
+    {
+      "id": "odp.fields.patents.pgpubDocumentMetaData",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.patents.search / odp.patents.get (and the per-application sub-resources), under patentFileWrapperDataBag[].pgpubDocumentMetaData. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: pgpubDocumentMetaData.fileCreateDateTime (e.g. \"2026-09-24T08:38:56\"); pgpubDocumentMetaData.fileLocationURI (e.g. \"https://api.uspto.gov/api/v1/datasets...\"); pgpubDocumentMetaData.productIdentifier (e.g. \"APPXML\"); pgpubDocumentMetaData.xmlFileName; pgpubDocumentMetaData.zipFileName."
+    },
+    {
+      "id": "odp.fields.patents.recordAttorney",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.patents.search / odp.patents.get (and the per-application sub-resources), under patentFileWrapperDataBag[].recordAttorney. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: recordAttorney.attorneyBag.activeIndicator; recordAttorney.attorneyBag.attorneyAddressBag.addressLineOneText; recordAttorney.attorneyBag.attorneyAddressBag.addressLineTwoText; recordAttorney.attorneyBag.attorneyAddressBag.cityName; recordAttorney.attorneyBag.attorneyAddressBag.countryCode; recordAttorney.attorneyBag.attorneyAddressBag.countryName; recordAttorney.attorneyBag.attorneyAddressBag.geographicRegionCode; recordAttorney.attorneyBag.attorneyAddressBag.geographicRegionName; recordAttorney.attorneyBag.attorneyAddressBag.nameLineOneText; recordAttorney.attorneyBag.attorneyAddressBag.postalCode; recordAttorney.attorneyBag.firstName; recordAttorney.attorneyBag.lastName; recordAttorney.attorneyBag.registeredPractitionerCategory; recordAttorney.attorneyBag.registrationNumber; recordAttorney.attorneyBag.telecommunicationAddressBag.telecommunicationNumber; recordAttorney.attorneyBag.telecommunicationAddressBag.telecomTypeCode; recordAttorney.customerNumberCorrespondenceData.patronIdentifier; recordAttorney.customerNumberCorrespondenceData.powerOfAttorneyAddressBag.addressLineOneText; recordAttorney.customerNumberCorrespondenceData.powerOfAttorneyAddressBag.addressLineTwoText; recordAttorney.customerNumberCorrespondenceData.powerOfAttorneyAddressBag.cityName; recordAttorney.customerNumberCorrespondenceData.powerOfAttorneyAddressBag.countryCode; recordAttorney.customerNumberCorrespondenceData.powerOfAttorneyAddressBag.countryName; recordAttorney.customerNumberCorrespondenceData.powerOfAttorneyAddressBag.geographicRegionCode; recordAttorney.customerNumberCorrespondenceData.powerOfAttorneyAddressBag.geographicRegionName; recordAttorney.customerNumberCorrespondenceData.powerOfAttorneyAddressBag.nameLineOneText; recordAttorney.customerNumberCorrespondenceData.powerOfAttorneyAddressBag.postalCode; recordAttorney.powerOfAttorneyBag.activeIndicator; recordAttorney.powerOfAttorneyBag.attorneyAddressBag.addressLineOneText; recordAttorney.powerOfAttorneyBag.attorneyAddressBag.addressLineTwoText; recordAttorney.powerOfAttorneyBag.attorneyAddressBag.cityName; recordAttorney.powerOfAttorneyBag.attorneyAddressBag.countryCode; recordAttorney.powerOfAttorneyBag.attorneyAddressBag.countryName; recordAttorney.powerOfAttorneyBag.attorneyAddressBag.geographicRegionCode; recordAttorney.powerOfAttorneyBag.attorneyAddressBag.geographicRegionName; recordAttorney.powerOfAttorneyBag.attorneyAddressBag.nameLineOneText; recordAttorney.powerOfAttorneyBag.attorneyAddressBag.postalCode; recordAttorney.powerOfAttorneyBag.firstName; recordAttorney.powerOfAttorneyBag.lastName; recordAttorney.powerOfAttorneyBag.middleName; recordAttorney.powerOfAttorneyBag.registeredPractitionerCategory; recordAttorney.powerOfAttorneyBag.registrationNumber; recordAttorney.powerOfAttorneyBag.telecommunicationAddressBag.telecommunicationNumber; recordAttorney.powerOfAttorneyBag.telecommunicationAddressBag.telecomTypeCode."
+    },
+    {
+      "id": "odp.fields.patents.documents",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.patents.documents, under documentBag[]. Fields: applicationNumberText; directionCategory (e.g. \"OUTGOING\"); documentCode (e.g. \"PETDEC\"); documentCodeDescriptionText; documentIdentifier (e.g. \"LN4VBTHCXBLUEX2\"); officialDate (e.g. \"2023-10-03T09:18:25.000-0400\")."
+    },
+    {
+      "id": "odp.fields.patents.documents.downloadOptionBag",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.patents.documents, under documentBag[].downloadOptionBag. Fields: downloadOptionBag.downloadUrl (e.g. \"https://api.uspto.gov/api/v1/download...\"); downloadOptionBag.mimeTypeIdentifier (e.g. \"PDF\"); downloadOptionBag.pageTotalQuantity (e.g. \"2\")."
+    },
+    {
+      "id": "odp.fields.patents.statusCodes",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.patents.statusCodes, under statusCodeBag[]. Fields: applicationStatusCode (e.g. \"1\"); applicationStatusDescriptionText."
+    },
+    {
+      "id": "odp.fields.ptab.proceedings",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.proceedings.search / get, under patentTrialProceedingDataBag[]. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: lastModifiedDateTime (e.g. \"2026-11-12T16:47:46\"); trialNumber (e.g. \"PGR2027-00008\")."
+    },
+    {
+      "id": "odp.fields.ptab.proceedings.patentOwnerData",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.proceedings.search / get, under patentTrialProceedingDataBag[].patentOwnerData. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: patentOwnerData.applicationNumberText; patentOwnerData.grantDate; patentOwnerData.groupArtUnitNumber; patentOwnerData.inventorName; patentOwnerData.patentNumber; patentOwnerData.technologyCenterNumber."
+    },
+    {
+      "id": "odp.fields.ptab.proceedings.regularPetitionerData",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.proceedings.search / get, under patentTrialProceedingDataBag[].regularPetitionerData. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: regularPetitionerData.counselName; regularPetitionerData.realPartyInInterestName."
+    },
+    {
+      "id": "odp.fields.ptab.proceedings.trialMetaData",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.proceedings.search / get, under patentTrialProceedingDataBag[].trialMetaData. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: trialMetaData.accordedFilingDate (e.g. \"2026-10-30\"); trialMetaData.fileDownloadURI (e.g. \"https://api.uspto.gov/api/v1/patent/p...\"); trialMetaData.petitionFilingDate (e.g. \"2026-11-10\"); trialMetaData.trialLastModifiedDate (e.g. \"2026-11-10\"); trialMetaData.trialLastModifiedDateTime (e.g. \"2026-11-10T21:05:06\"); trialMetaData.trialStatusCategory (e.g. \"Pending\"); trialMetaData.trialTypeCode (e.g. \"PGR\")."
+    },
+    {
+      "id": "odp.fields.ptab.decisions",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.decisions.search / get / byTrial, under patentTrialDocumentDataBag[]. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: lastModifiedDateTime (e.g. \"2026-11-10T23:31:24\"); trialDocumentCategory (e.g. \"Decision\"); trialNumber (e.g. \"IPR2026-00159\")."
+    },
+    {
+      "id": "odp.fields.ptab.decisions.decisionData",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.decisions.search / get / byTrial, under patentTrialDocumentDataBag[].decisionData. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: decisionData.decisionIssueDate (e.g. \"2026-11-10\"); decisionData.decisionTypeCategory (e.g. \"Decision\"); decisionData.statuteAndRuleBag (e.g. \"35 USC 315\"); decisionData.trialOutcomeCategory (e.g. \"Institution Granted(Joined)\")."
+    },
+    {
+      "id": "odp.fields.ptab.decisions.documentData",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.decisions.search / get / byTrial, under patentTrialDocumentDataBag[].documentData. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: documentData.documentCategory (e.g. \"NOTICE\"); documentData.documentFilingDate (e.g. \"2026-11-10\"); documentData.documentIdentifier (e.g. \"171381419\"); documentData.documentName; documentData.documentNumber (e.g. \"19\"); documentData.documentOCRText; documentData.documentSizeQuantity (e.g. \"117781\"); documentData.documentTitleText; documentData.documentTypeDescriptionText; documentData.fileDownloadURI (e.g. \"https://api.uspto.gov/api/v1/patent/p...\"); documentData.filingPartyCategory."
+    },
+    {
+      "id": "odp.fields.ptab.decisions.patentOwnerData",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.decisions.search / get / byTrial, under patentTrialDocumentDataBag[].patentOwnerData. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: patentOwnerData.applicationNumberText; patentOwnerData.counselName; patentOwnerData.grantDate; patentOwnerData.groupArtUnitNumber; patentOwnerData.inventorName; patentOwnerData.patentNumber; patentOwnerData.realPartyInInterestName; patentOwnerData.technologyCenterNumber."
+    },
+    {
+      "id": "odp.fields.ptab.decisions.regularPetitionerData",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.decisions.search / get / byTrial, under patentTrialDocumentDataBag[].regularPetitionerData. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: regularPetitionerData.counselName; regularPetitionerData.realPartyInInterestName."
+    },
+    {
+      "id": "odp.fields.ptab.decisions.trialMetaData",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.decisions.search / get / byTrial, under patentTrialDocumentDataBag[].trialMetaData. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: trialMetaData.accordedFilingDate (e.g. \"2025-11-25\"); trialMetaData.institutionDecisionDate (e.g. \"2026-05-19\"); trialMetaData.latestDecisionDate (e.g. \"2026-11-10\"); trialMetaData.petitionFilingDate (e.g. \"2025-11-25\"); trialMetaData.trialLastModifiedDate (e.g. \"2026-09-22\"); trialMetaData.trialLastModifiedDateTime (e.g. \"2026-09-22T10:12:44\"); trialMetaData.trialStatusCategory (e.g. \"Trial Instituted\"); trialMetaData.trialTypeCode (e.g. \"IPR\")."
+    },
+    {
+      "id": "odp.fields.ptab.documents",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.documents.search / get / byTrial, under patentTrialDocumentDataBag[]. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: lastModifiedDateTime (e.g. \"2026-11-12T08:34:29\"); trialDocumentCategory (e.g. \"Document\"); trialNumber (e.g. \"PGR2026-00070\")."
+    },
+    {
+      "id": "odp.fields.ptab.documents.documentData",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.documents.search / get / byTrial, under patentTrialDocumentDataBag[].documentData. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: documentData.documentCategory (e.g. \"Exhibit\"); documentData.documentFilingDate (e.g. \"2026-11-11\"); documentData.documentIdentifier (e.g. \"171381727\"); documentData.documentName; documentData.documentNumber (e.g. \"2019\"); documentData.documentSizeQuantity (e.g. \"6839288\"); documentData.documentTitleText; documentData.documentTypeDescriptionText; documentData.fileDownloadURI (e.g. \"https://api.uspto.gov/api/v1/patent/p...\"); documentData.filingPartyCategory."
+    },
+    {
+      "id": "odp.fields.ptab.documents.patentOwnerData",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.documents.search / get / byTrial, under patentTrialDocumentDataBag[].patentOwnerData. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: patentOwnerData.applicationNumberText; patentOwnerData.counselName; patentOwnerData.grantDate; patentOwnerData.groupArtUnitNumber; patentOwnerData.inventorName; patentOwnerData.patentNumber; patentOwnerData.realPartyInInterestName; patentOwnerData.technologyCenterNumber."
+    },
+    {
+      "id": "odp.fields.ptab.documents.regularPetitionerData",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.documents.search / get / byTrial, under patentTrialDocumentDataBag[].regularPetitionerData. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: regularPetitionerData.counselName; regularPetitionerData.realPartyInInterestName."
+    },
+    {
+      "id": "odp.fields.ptab.documents.trialMetaData",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.documents.search / get / byTrial, under patentTrialDocumentDataBag[].trialMetaData. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: trialMetaData.accordedFilingDate (e.g. \"2026-08-11\"); trialMetaData.petitionFilingDate (e.g. \"2026-08-11\"); trialMetaData.trialLastModifiedDate (e.g. \"2026-11-11\"); trialMetaData.trialLastModifiedDateTime (e.g. \"2026-11-11T16:37:47\"); trialMetaData.trialStatusCategory (e.g. \"Pending\"); trialMetaData.trialTypeCode (e.g. \"PGR\")."
+    },
+    {
+      "id": "odp.fields.ptab.appeals",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.appeals.search / get / byAppeal, under patentAppealDataBag[]. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: appealDocumentCategory (e.g. \"Decision\"); appealNumber (e.g. \"2026003213\"); lastModifiedDateTime (e.g. \"2026-10-27T19:32:11\")."
+    },
+    {
+      "id": "odp.fields.ptab.appeals.appealMetaData",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.appeals.search / get / byAppeal, under patentAppealDataBag[].appealMetaData. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: appealMetaData.appealFilingDate (e.g. \"2026-08-17\"); appealMetaData.appealLastModifiedDate (e.g. \"2026-10-27\"); appealMetaData.appealLastModifiedDateTime (e.g. \"2026-10-27T13:09:33\"); appealMetaData.applicationTypeCategory (e.g. \"REGULAR\"); appealMetaData.fileDownloadURI (e.g. \"https://api.uspto.gov/api/v1/patent/p...\")."
+    },
+    {
+      "id": "odp.fields.ptab.appeals.appellantData",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.appeals.search / get / byAppeal, under patentAppealDataBag[].appellantData. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: appellantData.applicationNumberText; appellantData.counselName; appellantData.groupArtUnitNumber (e.g. \"3627\"); appellantData.inventorName; appellantData.patentNumber; appellantData.patentOwnerName; appellantData.publicationDate (e.g. \"2023-09-28\"); appellantData.publicationNumber (e.g. \"US20230306398A1\"); appellantData.realPartyInInterestName; appellantData.technologyCenterNumber (e.g. \"3600\")."
+    },
+    {
+      "id": "odp.fields.ptab.appeals.decisionData",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.appeals.search / get / byAppeal, under patentAppealDataBag[].decisionData. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: decisionData.appealOutcomeCategory (e.g. \"Affirmed\"); decisionData.decisionIssueDate (e.g. \"2026-10-27\"); decisionData.decisionTypeCategory (e.g. \"Decision\"); decisionData.issueTypeBag (e.g. \"102\"); decisionData.statuteAndRuleBag (e.g. \"35 USC 134\")."
+    },
+    {
+      "id": "odp.fields.ptab.appeals.documentData",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.appeals.search / get / byAppeal, under patentAppealDataBag[].documentData. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: documentData.documentFilingDate (e.g. \"2026-10-27\"); documentData.documentIdentifier (e.g. \"0c3e18b7-ff84-4529-9c5a-b6985ddaa169\"); documentData.documentName; documentData.documentOCRText; documentData.documentSizeQuantity (e.g. \"402361\"); documentData.documentTypeDescriptionText; documentData.fileDownloadURI (e.g. \"https://api.uspto.gov/api/v1/patent/p...\")."
+    },
+    {
+      "id": "odp.fields.ptab.interferences",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.interferences.search / get / byInterference, under patentInterferenceDataBag[]. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: interferenceNumber (e.g. \"106130\"); lastModifiedDateTime (e.g. \"2025-12-12T17:18:56\")."
+    },
+    {
+      "id": "odp.fields.ptab.interferences.additionalPartyDataBag",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.interferences.search / get / byInterference, under patentInterferenceDataBag[].additionalPartyDataBag. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: additionalPartyDataBag.additionalPartyName; additionalPartyDataBag.applicationNumberText; additionalPartyDataBag.inventorName; additionalPartyDataBag.patentNumber."
+    },
+    {
+      "id": "odp.fields.ptab.interferences.documentData",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.interferences.search / get / byInterference, under patentInterferenceDataBag[].documentData. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: documentData.decisionIssueDate (e.g. \"2025-01-28\"); documentData.decisionTypeCategory (e.g. \"Decision\"); documentData.documentFilingDate (e.g. \"2025-01-28\"); documentData.documentIdentifier (e.g. \"229ba0b8d5f70d2e45cc36b79476f56f3faf5...\"); documentData.documentName; documentData.documentOCRText; documentData.documentSizeQuantity (e.g. \"97923\"); documentData.documentTitleText; documentData.fileDownloadURI (e.g. \"https://api.uspto.gov/api/v1/patent/p...\"); documentData.interferenceOutcomeCategory (e.g. \"Judgment\"); documentData.statuteAndRuleBag (e.g. \"37 CFR 41.127(a)\")."
+    },
+    {
+      "id": "odp.fields.ptab.interferences.interferenceMetaData",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.interferences.search / get / byInterference, under patentInterferenceDataBag[].interferenceMetaData. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: interferenceMetaData.declarationDate (e.g. \"2021-01-26\"); interferenceMetaData.fileDownloadURI (e.g. \"https://api.uspto.gov/api/v1/patent/p...\"); interferenceMetaData.interferenceLastModifiedDate (e.g. \"2025-11-13\"); interferenceMetaData.interferenceLastModifiedDateTime (e.g. \"2025-11-13T00:00:00\"); interferenceMetaData.interferenceStyleName."
+    },
+    {
+      "id": "odp.fields.ptab.interferences.juniorPartyData",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.interferences.search / get / byInterference, under patentInterferenceDataBag[].juniorPartyData. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: juniorPartyData.applicationNumberText; juniorPartyData.counselName; juniorPartyData.grantDate; juniorPartyData.groupArtUnitNumber; juniorPartyData.inventorName; juniorPartyData.patentNumber; juniorPartyData.patentOwnerName; juniorPartyData.publicationDate; juniorPartyData.publicationNumber; juniorPartyData.realPartyInInterestName; juniorPartyData.technologyCenterNumber."
+    },
+    {
+      "id": "odp.fields.ptab.interferences.seniorPartyData",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.ptab.interferences.search / get / byInterference, under patentInterferenceDataBag[].seniorPartyData. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: seniorPartyData.applicationNumberText; seniorPartyData.counselName; seniorPartyData.groupArtUnitNumber; seniorPartyData.inventorName; seniorPartyData.patentOwnerName; seniorPartyData.publicationDate; seniorPartyData.publicationNumber; seniorPartyData.realPartyInInterestName; seniorPartyData.technologyCenterNumber."
+    },
+    {
+      "id": "odp.fields.petitions",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.petitions.search / get, under petitionDecisionDataBag[]. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: allSearchableFields; applicationNumberText; applicationStatusDate (e.g. \"2026-11-10\"); applicationStatusDescriptionText; businessEntityStatusCategory (e.g. \"Small\"); courtActionIndicator (e.g. \"false\"); customerNumber; decidedPetitionTypeCode (e.g. \"A\"); decidedPetitionTypeCodeDescriptionText; decisionDate (e.g. \"2026-11-10\"); decisionMailDate (e.g. \"2026-11-10\"); decisionPetitionTypeCode (e.g. \"533\"); decisionPetitionTypeCodeDescriptionText; finalDecidingOfficeName; finalPetitionDecisionIndicator (e.g. \"false\"); firstApplicantName; firstInventorToFileIndicator; groupArtUnitNumber (e.g. \"2661\"); inventionTitle (e.g. \"Image Processing Method\"); inventorBag; lastModifiedDateTime (e.g. \"2026-11-12T10:03:00\"); ocrSearchText; patentNumber (e.g. \"8780235\"); petitionDecisionRecordIdentifier (e.g. \"fb8a8007-0c3e-5f8a-8e54-f0cff3470495\"); petitionMailDate (e.g. \"2026-11-10\"); technologyCenter (e.g. \"2600\")."
+    },
+    {
+      "id": "odp.fields.petitions.documentBag",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.petitions.search / get, under petitionDecisionDataBag[].documentBag. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: documentBag.documentCode (e.g. \"PET.DEC.AUTO\"); documentBag.documentCodeDescriptionText; documentBag.documentIdentifier (e.g. \"MWAUWRIDX60X137\"); documentBag.downloadOptionBag.downloadUrl (e.g. \"https://api.uspto.gov/api/v1/download...\"); documentBag.downloadOptionBag.mimeTypeIdentifier (e.g. \"PDF\"); documentBag.downloadOptionBag.pageTotalQuantity (e.g. \"1\"); documentBag.officialDate (e.g. \"2026-11-09T22:10:06\")."
+    },
+    {
+      "id": "odp.fields.officeActions",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.officeActions.search / get, under officeActionDataBag[]. Use these dotted paths (relative to the record) in q, filters, rangeFilters, sort, fields and facets; not every response field is searchable, so facet or test a filter before relying on it. Fields: applicationNumberText; documentCode (e.g. \"NOA\"); documentCodeDescriptionText; filingDate (e.g. \"2023-07-12\"); groupArtUnitNumber (e.g. \"2858\"); inventionTitle (e.g. \"DEFECT EVALUATION METHOD FOR EVALUATI...\"); lastModifiedDateTime (e.g. \"2026-10-09T18:32:59\"); obsoleteDocumentIdentifier (e.g. \"MUZFXBSG237X196\"); officeActionRecordIdentifier (e.g. \"be47fe31c13cfe14ff75429157d238e2\"); officeActionText; publicStatusIndicator (e.g. \"true\"); rejectionTypeBag (e.g. \"102\"); submissionDate (e.g. \"2026-10-09\")."
+    },
+    {
+      "id": "odp.fields.oa.text",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.oa.text.search (legacy DSAPI), under response.docs[]. Legacy DSAPI: use these names in the Lucene criteria string (name:value, AND/OR, [a TO b]); page with { start, rows }. The odp search body (q/filters/fields) does not apply here. Fields: accessLevelCategory (e.g. \"PUBLIC\"); applicationDeemedWithdrawnDate (e.g. \"0001-01-03T00:00:00\"); applicationStatusNumber (e.g. \"150\"); applicationTypeCategory (e.g. \"REGULAR\"); bodyText; createDateTime (e.g. \"2025-01-04T23:00:34\"); customerNumber; documentActiveIndicator (e.g. \"0\"); effectiveFilingDate (e.g. \"0001-01-03T00:00:00\"); examinerEmployeeNumber; filingDate (e.g. \"2014-09-12T00:00:00\"); grantDate (e.g. \"2018-08-14T00:00:00\"); groupArtUnitNumber (e.g. \"1712\"); id (e.g. \"813869284108aad9fc4821419bb120d78f2a1...\"); inventionSubjectMatterCategory (e.g. \"UTL\"); inventionTitle (e.g. \"METHODS FOR MAKING COPPER INKS AND FILMS\"); lastModifiedTimestamp (e.g. \"2021-01-21T18:45:36\"); legacyCMSIdentifier (e.g. \"PATENT-14485382-OACS-JGW9HEY3RXEAPX3\"); legacyDocumentCodeIdentifier (e.g. \"NOA\"); nationalClass (e.g. \"427\"); nationalSubclass (e.g. \"553000\"); obsoleteDocumentIdentifier (e.g. \"JGW9HEY3RXEAPX3\"); patentApplicationConfirmationNumber (e.g. \"5549\"); patentApplicationNumber (e.g. \"14485382\"); patentNumber (e.g. \"10047236\"); sourceSystemName; submissionDate (e.g. \"2018-05-09T00:00:00\"); techCenter (e.g. \"1700\"); workGroup (e.g. \"1710\")."
+    },
+    {
+      "id": "odp.fields.oa.text.sections",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.oa.text.search (legacy DSAPI), under response.docs[].sections. Legacy DSAPI: use these names in the Lucene criteria string (name:value, AND/OR, [a TO b]); page with { start, rows }. The odp search body (q/filters/fields) does not apply here. Fields: sections.detailCitationText; sections.examinerEmployeeNumber; sections.filingDate (e.g. \"2017-06-21T00:00:00\"); sections.grantDate (e.g. \"0001-01-03T00:00:00\"); sections.groupArtUnitNumber (e.g. \"2863\"); sections.legacyDocumentCodeIdentifier (e.g. \"CTFR\"); sections.nationalClass (e.g. \"702\"); sections.nationalSubclass (e.g. \"011000\"); sections.obsoleteDocumentIdentifier (e.g. \"JZA4N6JFRXEAPX2\"); sections.officeActionIdentifier (e.g. \"689374eb0add281d6ac363c73cc6fa46ab9e6...\"); sections.patentApplicationNumber (e.g. \"15628911\"); sections.proceedingAppendixText; sections.section101RejectionText; sections.section102RejectionText; sections.section103RejectionText; sections.section112RejectionText; sections.specificationTitleText; sections.submissionDate (e.g. \"2019-08-15T00:00:00\"); sections.summaryText; sections.techCenterNumber (e.g. \"2800\"); sections.terminalDisclaimerStatusText; sections.withdrawalRejectionText; sections.workGroupNumber (e.g. \"2860\")."
+    },
+    {
+      "id": "odp.fields.oa.rejections",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.oa.rejections.search (legacy DSAPI), under response.docs[]. Legacy DSAPI: use these names in the Lucene criteria string (name:value, AND/OR, [a TO b]); page with { start, rows }. The odp search body (q/filters/fields) does not apply here. Fields: actionTypeCategory; aliceIndicator (e.g. \"false\"); allowedClaimIndicator (e.g. \"false\"); bilskiIndicator (e.g. \"false\"); cite103EQ1 (e.g. \"1\"); cite103GT3 (e.g. \"0\"); cite103Max (e.g. \"2\"); claimNumberArrayDocument (e.g. \"1\"); closingMissing (e.g. \"0\"); createDateTime (e.g. \"2025-07-15T21:22:06\"); createUserIdentifier (e.g. \"ETL_SYS\"); formParagraphMissing (e.g. \"0\"); groupArtUnitNumber (e.g. \"1713\"); hasRej101 (e.g. \"0\"); hasRej102 (e.g. \"0\"); hasRej103 (e.g. \"1\"); hasRej112 (e.g. \"1\"); hasRejDP (e.g. \"0\"); headerMissing (e.g. \"0\"); id (e.g. \"14642e2cc522ac577468fb6fc026d135\"); legacyDocumentCodeIdentifier (e.g. \"CTNF\"); legalSectionCode (e.g. \"112\"); mayoIndicator (e.g. \"false\"); myriadIndicator (e.g. \"false\"); nationalClass (e.g. \"438\"); nationalSubclass (e.g. \"725000\"); obsoleteDocumentIdentifier (e.g. \"GTYKOVWIPPOPPY5\"); paragraphNumber; patentApplicationNumber (e.g. \"12190351\"); rejectFormMissmatch (e.g. \"0\"); submissionDate (e.g. \"2011-10-19T00:00:00\")."
+    },
+    {
+      "id": "odp.fields.oa.citations",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.oa.citations.search (legacy DSAPI), under response.docs[]. Legacy DSAPI: use these names in the Lucene criteria string (name:value, AND/OR, [a TO b]); page with { start, rows }. The odp search body (q/filters/fields) does not apply here. Fields: actionTypeCategory (e.g. \"rejected\"); applicantCitedExaminerReferenceIndicator; createDateTime (e.g. \"2025-07-07T01:12:35\"); createUserIdentifier (e.g. \"ETL_SYS\"); examinerCitedReferenceIndicator; groupArtUnitNumber (e.g. \"3617\"); id (e.g. \"018a0f33b2c4787bc3dc171b37897698\"); legalSectionCode (e.g. \"102\"); obsoleteDocumentIdentifier (e.g. \"K6AT4TEFRXEAPX2\"); officeActionCitationReferenceIndicator (e.g. \"true\"); parsedReferenceIdentifier (e.g. \"20030201666\"); patentApplicationNumber (e.g. \"15866467\"); referenceIdentifier (e.g. \"Artessa, Andrew US 20030201666 A1 \"); techCenter (e.g. \"3600\"); workGroup (e.g. \"3610\")."
+    },
+    {
+      "id": "odp.fields.oa.enrichedCitations",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.oa.enrichedCitations.search (legacy DSAPI), under response.docs[]. Legacy DSAPI: use these names in the Lucene criteria string (name:value, AND/OR, [a TO b]); page with { start, rows }. The odp search body (q/filters/fields) does not apply here. Fields: applicantCitedExaminerReferenceIndicator; citationCategoryCode (e.g. \"Y\"); citedDocumentIdentifier (e.g. \"US 2013/0341529 A1\"); countryCode (e.g. \"US\"); createDateTime (e.g. \"2025-07-15T21:09:34\"); createUserIdentifier (e.g. \"ETL_SYS\"); examinerCitedReferenceIndicator; groupArtUnitNumber (e.g. \"2884\"); id (e.g. \"8ff4c6937f8cf48f2995926e0225576f\"); inventorNameText; kindCode (e.g. \"A1\"); nplIndicator (e.g. \"false\"); obsoleteDocumentIdentifier (e.g. \"J02FRPALRXEAPX0\"); officeActionCategory (e.g. \"CTNF\"); officeActionDate (e.g. \"2017-03-13T00:00:00\"); passageLocationText; patentApplicationNumber (e.g. \"15061308\"); publicationNumber (e.g. \"20130341529\"); qualitySummaryText; relatedClaimNumberText; techCenter (e.g. \"2800\"); workGroupNumber (e.g. \"2880\")."
+    },
+    {
+      "id": "odp.fields.bulk",
+      "kind": "field",
+      "binding": "odp",
+      "description": "Response fields of odp.bulk.search / get, under bulkDataProductBag[]. Use these paths in q; this GET-only endpoint takes at most one filter and one rangeFilter. Fields: daysOfWeekText; lastModifiedDateTime (e.g. \"2026-11-12 02:26:24\"); mimeTypeIdentifierArrayText; productDatasetArrayText; productDatasetCategoryArrayText; productDescriptionText; productFileTotalQuantity (e.g. \"3\"); productFrequencyText; productFromDate (e.g. \"2001-01-01\"); productIdentifier (e.g. \"PTFWPRE\"); productLabelArrayText; productTitleText; productToDate (e.g. \"2026-12-31\"); productTotalFileSize (e.g. \"65251247317\")."
+    }
+  ]
+}

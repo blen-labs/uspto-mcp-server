@@ -1,0 +1,113 @@
+name: release
+
+# Continuous release: every push to main is released, after the complete CI gates pass on that
+# exact commit. scripts/release.mjs computes the next SemVer from the conventional commits since
+# the last tag (breaking -> major, feat -> minor, anything else -> patch; the first release of a
+# repository with no tags publishes the version package.json declares), stamps package.json and
+# the x-release-version markers, and writes the CHANGELOG section.
+#
+# Least privilege, three jobs:
+#   gates   - read-only: the full CI workflow (tests incl. Postgres + both sandboxes, Docker, MCPB).
+#   cut     - contents: write. Installs with --ignore-scripts, stamps, builds, packs the tarball,
+#             pushes the chore(release) commit + tag, creates the GitHub Release.
+#   publish - id-token: write only. Never checks out or installs dependencies: it publishes the
+#             exact tarball `cut` built, via npm trusted publishing (OIDC). No npm token exists.
+#
+# No-loop guarantee: the release commit is pushed with GITHUB_TOKEN, and GitHub never triggers
+# workflows for GITHUB_TOKEN-initiated events. If another commit lands on main mid-run, the
+# release push is rejected and this run fails; the newer push's run releases both.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      republish:
+        description: 'Recovery only: re-run gates and publish the CURRENT version to npm (no bump, no tag)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  gates:
+    if: github.event_name == 'workflow_dispatch' || !startsWith(github.event.head_commit.message, 'chore(release):')
+    uses: ./.github/workflows/ci.yml
+
+  cut:
+    needs: gates
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # release commit, tag, GitHub Release
+    outputs:
+      released: ${{ steps.cut.outputs.released || (inputs.republish && 'true') || 'false' }}
+      version: ${{ steps.cut.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # full history + tags: the bump is computed from commits since the last tag
+          persist-credentials: true # the release commit is pushed with these credentials
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      # No dependency lifecycle scripts run in a job that can push to the repository.
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Compute version, stamp files, write CHANGELOG section
+        id: cut
+        if: ${{ !inputs.republish }}
+        run: node scripts/release.mjs
+      # Build AFTER stamping so dist/ carries the released version strings.
+      - run: pnpm build
+      - name: Pack the exact artifact to publish
+        run: |
+          npm pack --ignore-scripts
+          node -e "const v=require('./package.json').version; if(!require('fs').existsSync('blen-uspto-mcp-server-'+v+'.tgz')) process.exit(1)"
+          grep -q "version: '$(node -p 'require("./package.json").version')'" dist/server/mcpServer.js
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: npm-tarball
+          path: blen-uspto-mcp-server-*.tgz
+          if-no-files-found: error
+      - name: Commit, tag, and create the GitHub Release
+        if: steps.cut.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.cut.outputs.version }}
+          NOTES_FILE: ${{ steps.cut.outputs.notes_file }}
+          BUMP: ${{ steps.cut.outputs.bump }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ "$BUMP" != "initial" ]; then
+            git add package.json CHANGELOG.md src/server/mcpServer.ts src/sdk/bindings.ts
+            git commit -m "chore(release): v${VERSION}"
+          fi
+          git tag -a "v${VERSION}" -m "v${VERSION}"
+          git push origin HEAD:main --follow-tags
+          gh release create "v${VERSION}" --title "v${VERSION}" --notes-file "${NOTES_FILE}" blen-uspto-mcp-server-*.tgz
+
+  publish:
+    needs: cut
+    if: needs.cut.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    environment: npm # add required reviewers here to approve each publish
+    permissions:
+      id-token: write # npm trusted publishing (OIDC) + provenance
+    steps:
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: npm-tarball
+      # npm CLI >= 11.5.1 is the reference OIDC trusted-publishing client. PINNED: this job holds
+      # publish rights, and an unpinned npm@latest would run with them. Bump deliberately.
+      - name: Publish to npm (trusted publishing)
+        run: |
+          npm install -g npm@12.0.2
+          npm publish ./blen-uspto-mcp-server-*.tgz --access public

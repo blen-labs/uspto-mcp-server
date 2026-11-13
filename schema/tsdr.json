@@ -1,0 +1,129 @@
+{
+  "provenance": {
+    "generatedBy": "scripts/gen-fields.mjs",
+    "generatedAt": "2026-11-13",
+    "sources": {
+      "patent-dev": "Sample responses from github.com/patent-dev/uspto-odp (MIT), demo/examples, commit 8b4114dd095fccc126fcf16b4884755f7b14c3b3 (2026-11-08). Used only where no live capture exists (TSDR, pending a TSDR key)."
+    },
+    "files": {
+      "get_trademark_status/response.json": {
+        "source": "patent-dev",
+        "sha256": "87473231b6346e4a0a94d83d1d36e7a2c0edfc0c6e884677de5594404ce28bce"
+      },
+      "get_trademark_last_update/response.json": {
+        "source": "patent-dev",
+        "sha256": "46822050d3a3eb5c5ad7896cbc8dc1e054c81995c09a9c37133a57f121963dab"
+      }
+    }
+  },
+  "endpoints": [
+    {
+      "id": "tsdr.status",
+      "kind": "endpoint",
+      "binding": "tsdr",
+      "signature": "tsdr.status(caseId)",
+      "description": "Trademark case status and bibliographic data as JSON ({ trademarks: [ { status: { markElement (the mark text), status (code), extStatusDesc / tm5StatusDesc (status text), filingDate, usRegistrationNumber, ... }, parties: { ownerGroups (keyed by party type code) }, gsList (goods & services by class), prosecutionHistory (events), publication, divisional, internationalData } ] }). caseId: 'sn' + 8-digit serial ('sn97123456'), 'rn' + registration number ('rn6123456'), 'ref' + Madrid reference number ('refZ1231384'), 'ir' + international registration number; a bare 8-digit number is a serial number.",
+      "example": "const r = await tsdr.status('sn97123456'); const t = r.trademarks[0]; return { mark: t.status.markElement, status: t.status.tm5StatusDesc, detail: t.status.extStatusDesc, filed: t.status.filingDate, classes: t.gsList?.map(g => g.primeClassCode) }"
+    },
+    {
+      "id": "tsdr.multiStatus",
+      "kind": "endpoint",
+      "binding": "tsdr",
+      "signature": "tsdr.multiStatus(type: 'sn' | 'rn' | 'ref' | 'ir', ids: string[] /* 1-25 */)",
+      "description": "Status for up to 25 trademark cases of one number type in one call (counts as one request). Returns { size, transactionList: [ { searchId, trademarks: [...] } ] } with the same record shape as tsdr.status.",
+      "example": "await tsdr.multiStatus('sn', ['97123456', '97123457'])"
+    },
+    {
+      "id": "tsdr.documents",
+      "kind": "endpoint",
+      "binding": "tsdr",
+      "signature": "tsdr.documents(caseId)",
+      "description": "The trademark case's document list (applications, office actions, responses, registration certificates, specimens) as XML text, one entry per document with its type, mail/received date, document id and page URLs. Parse with string methods / regex in the sandbox and return a summary; PDFs cannot be downloaded from the sandbox. Inspect a slice of the XML first to see the element names.",
+      "example": "const xml = await tsdr.documents('sn97123456'); return xml.slice(0, 3000)"
+    },
+    {
+      "id": "tsdr.documentInfo",
+      "kind": "endpoint",
+      "binding": "tsdr",
+      "signature": "tsdr.documentInfo(caseId, documentId)",
+      "description": "Metadata for one document in a trademark case (XML text), e.g. page count and media types. documentId comes from tsdr.documents.",
+      "example": "const xml = await tsdr.documents('sn97123456'); const id = (xml.match(/<DocumentIdentifier>([^<]+)</) ?? [])[1]; return id ? await tsdr.documentInfo('sn97123456', id) : xml.slice(0, 2000)"
+    },
+    {
+      "id": "tsdr.lastUpdate",
+      "kind": "endpoint",
+      "binding": "tsdr",
+      "signature": "tsdr.lastUpdate(serialNumber)",
+      "description": "When a trademark case's prosecution history last changed (caseUpdateInfo). Serial numbers only. Cheap way to check whether a cached status is stale.",
+      "example": "await tsdr.lastUpdate('97123456')"
+    }
+  ],
+  "fields": [
+    {
+      "id": "tsdr.limits",
+      "kind": "field",
+      "binding": "tsdr",
+      "description": "TSDR needs its own API key (USPTO-API-KEY header; separate from the ODP key; get it at account.uspto.gov/api-manager). Rate limit: about 60 requests per minute per key (document/PDF downloads 4 per minute). This server paces TSDR at one request per second per key; use tsdr.multiStatus to fetch up to 25 cases in one request."
+    },
+    {
+      "id": "tsdr.caseId",
+      "kind": "field",
+      "binding": "tsdr",
+      "description": "TSDR case ids: 'sn' + 8-digit serial number (application), 'rn' + 7-digit registration number, 'ref' + reference number, 'ir' + international registration number. Serial numbers are not patent application numbers."
+    },
+    {
+      "id": "tsdr.fields.status",
+      "kind": "field",
+      "binding": "tsdr",
+      "description": "Response fields of tsdr.status / tsdr.multiStatus (transactionList[].trademarks[]), under trademarks[]. Fields: foreignInfoList; internationalData (e.g. \"false\"); relationshipBundleList."
+    },
+    {
+      "id": "tsdr.fields.status.divisional",
+      "kind": "field",
+      "binding": "tsdr",
+      "description": "Response fields of tsdr.status / tsdr.multiStatus (transactionList[].trademarks[]), under trademarks[].divisional. Fields: divisional.childOf; divisional.parentOfList; divisional.serialNumber (e.g. \"97123456\")."
+    },
+    {
+      "id": "tsdr.fields.status.gsList",
+      "kind": "field",
+      "binding": "tsdr",
+      "description": "Response fields of tsdr.status / tsdr.multiStatus (transactionList[].trademarks[]), under trademarks[].gsList. Fields: gsList.classBasis; gsList.description; gsList.firstUseDate; gsList.firstUseDateDescription; gsList.firstUseInCommerceDate; gsList.firstUseInCommerceDateDescription; gsList.internationalClasses.code (e.g. \"009\"); gsList.internationalClasses.description; gsList.internationalClassPrime (e.g. \"true\"); gsList.primeClassCode (e.g. \"009\"); gsList.pseudoClasses; gsList.serialNumber (e.g. \"97123456\"); gsList.statusCode (e.g. \"6\"); gsList.statusDate (e.g. \"2021-11-19\"); gsList.statusDescription; gsList.usClasses.code (e.g. \"021\"); gsList.usClasses.description."
+    },
+    {
+      "id": "tsdr.fields.status.parties",
+      "kind": "field",
+      "binding": "tsdr",
+      "description": "Response fields of tsdr.status / tsdr.multiStatus (transactionList[].trademarks[]), under trademarks[].parties. Fields: parties.ownerGroups.*.address1; parties.ownerGroups.*.address2; parties.ownerGroups.*.addressStateCountry.iso.code (e.g. \"US\"); parties.ownerGroups.*.addressStateCountry.iso.name; parties.ownerGroups.*.addressStateCountry.isoRegion.code (e.g. \"DE\"); parties.ownerGroups.*.addressStateCountry.isoRegion.name; parties.ownerGroups.*.addressStateCountry.stateCountry.code (e.g. \"DE\"); parties.ownerGroups.*.addressStateCountry.stateCountry.name; parties.ownerGroups.*.addressStateCountry.wipo; parties.ownerGroups.*.assignment; parties.ownerGroups.*.citizenship.iso.code (e.g. \"US\"); parties.ownerGroups.*.citizenship.iso.name; parties.ownerGroups.*.citizenship.isoRegion.code (e.g. \"DE\"); parties.ownerGroups.*.citizenship.isoRegion.name; parties.ownerGroups.*.citizenship.stateCountry.code (e.g. \"DE\"); parties.ownerGroups.*.citizenship.stateCountry.name; parties.ownerGroups.*.citizenship.wipo; parties.ownerGroups.*.city; parties.ownerGroups.*.composedOf; parties.ownerGroups.*.dbaAkaFormerly; parties.ownerGroups.*.emailList.addresses; parties.ownerGroups.*.emailList.authIndicator; parties.ownerGroups.*.entityNum (e.g. \"1\"); parties.ownerGroups.*.entityType.code (e.g. \"16\"); parties.ownerGroups.*.entityType.description; parties.ownerGroups.*.name; parties.ownerGroups.*.partyType; parties.ownerGroups.*.partyTypeDescription; parties.ownerGroups.*.reelFrame; parties.ownerGroups.*.serialNumber (e.g. \"97123456\"); parties.ownerGroups.*.zip."
+    },
+    {
+      "id": "tsdr.fields.status.prosecutionHistory",
+      "kind": "field",
+      "binding": "tsdr",
+      "description": "Response fields of tsdr.status / tsdr.multiStatus (transactionList[].trademarks[]), under trademarks[].prosecutionHistory. Fields: prosecutionHistory.entryCode (e.g. \"MAB2\"); prosecutionHistory.entryDate (e.g. \"2023-03-22T04:00:00.000+0000\"); prosecutionHistory.entryDesc (e.g. \"ABANDONMENT NOTICE E-MAILED - FAILURE...\"); prosecutionHistory.entryNumber (e.g. \"18\"); prosecutionHistory.entryType (e.g. \"E\"); prosecutionHistory.proceedingNum (e.g. \"0\")."
+    },
+    {
+      "id": "tsdr.fields.status.publication",
+      "kind": "field",
+      "binding": "tsdr",
+      "description": "Response fields of tsdr.status / tsdr.multiStatus (transactionList[].trademarks[]), under trademarks[].publication. Fields: publication.officialGazettes; publication.serialNumber (e.g. \"97123456\")."
+    },
+    {
+      "id": "tsdr.fields.status.status",
+      "kind": "field",
+      "binding": "tsdr",
+      "description": "Response fields of tsdr.status / tsdr.multiStatus (transactionList[].trademarks[]), under trademarks[].status. Fields: status.amendPrincipal (e.g. \"false\"); status.amendSupplemental (e.g. \"false\"); status.attrnyDktNumber (e.g. \"032854.7028\"); status.certificationMark (e.g. \"false\"); status.changeInReg (e.g. \"false\"); status.chargeToLocation; status.clsTotal (e.g. \"5\"); status.collectiveMembershipMark (e.g. \"false\"); status.collectiveServiceMark (e.g. \"false\"); status.collectiveTradeMark (e.g. \"false\"); status.colorDrawingCurr (e.g. \"false\"); status.correction; status.correspondence.address.city; status.correspondence.address.countryCode; status.correspondence.address.countryName; status.correspondence.address.line1; status.correspondence.address.postalCode; status.correspondence.address.region.iso.code (e.g. \"US\"); status.correspondence.address.region.iso.name; status.correspondence.address.region.isoRegion.code (e.g. \"IL\"); status.correspondence.address.region.isoRegion.name; status.correspondence.address.region.stateCountry.code (e.g. \"IL\"); status.correspondence.address.region.stateCountry.name; status.correspondence.address.region.wipo; status.correspondence.attorneyEmail.addresses; status.correspondence.attorneyEmail.authIndicator; status.correspondence.attorneyName; status.correspondence.correspondantEmail.addresses; status.correspondence.correspondantEmail.authIndicator; status.correspondence.correspondantFax; status.correspondence.correspondantPhone; status.correspondence.firmName; status.correspondence.freeFormAddress; status.correspondence.individualFullName; status.currentLoc (e.g. \"TMO LAW OFFICE 112 - EXAMINING ATTORN...\"); status.currentlyAsBaseApp (e.g. \"false\"); status.currentlyAsTeasPlusApp (e.g. \"false\"); status.currentlyAsTeasRfApp (e.g. \"false\"); status.currLocationCd (e.g. \"M3X\"); status.currLocationDt (e.g. \"2023-03-22\"); status.dateAbandoned (e.g. \"2023-03-08\"); status.designSearchList; status.extStatusDesc (e.g. \"Abandoned because the applicant faile...\"); status.filed44d (e.g. \"false\"); status.filed44e (e.g. \"false\"); status.filed66a (e.g. \"false\"); status.filedAsBaseApp (e.g. \"false\"); status.filedAsTeasPlusApp (e.g. \"false\"); status.filedAsTeasRfApp (e.g. \"false\"); status.filedItu (e.g. \"true\"); status.filedNoBasis (e.g. \"false\"); status.filedUse (e.g. \"false\"); status.filingDate (e.g. \"2021-11-13\"); status.intStatusDesc; status.ituAmended (e.g. \"false\"); status.ituCurr (e.g. \"true\"); status.lawOffAsgnCd (e.g. \"M30\"); status.lawOffAssigned (e.g. \"LAW OFFICE 112\"); status.markDrawDesc (e.g. \"STANDARD CHARACTER MARK\"); status.markDrawingCd (e.g. \"4\"); status.markElement (e.g. \"AZUKI ZEN\"); status.newLawOffAsgnCd (e.g. \"112\"); status.noBasisCurr (e.g. \"false\"); status.others (e.g. \"false\"); status.parentOf; status.phyLocation; status.phyLocationDt; status.physicalLocationHistory.eventDate (e.g. \"2021-11-17\"); status.physicalLocationHistory.physicalLocation (e.g. \"OUT\"); status.physicalLocationHistory.physicalLocationDescription; status.prevRegNumList; status.pseudoMark; status.publishedPrevRegMark (e.g. \"false\"); status.renewalFiled (e.g. \"false\"); status.sect15Ack (e.g. \"false\"); status.sect15Filed (e.g. \"false\"); status.sect44dAmended (e.g. \"false\"); status.sect44dCurr (e.g. \"false\"); status.sect44eAmended (e.g. \"false\"); status.sect44eCurr (e.g. \"false\"); status.sect66aCurr (e.g. \"false\"); status.sect71Acpt (e.g. \"false\"); status.sect71Filed (e.g. \"false\"); status.sect71PartialAcpt (e.g. \"false\"); status.sect8Acpt (e.g. \"false\"); status.sect8Filed (e.g. \"false\"); status.sect8PartialAcpt (e.g. \"false\"); status.section2f (e.g. \"false\"); status.section2fPartial (e.g. \"false\"); status.serialNumber (e.g. \"97123456\"); status.serviceMark (e.g. \"false\"); status.staff.chargeTo; status.staff.examiner.name; status.staff.examiner.number; status.staff.ituParalegal; status.staff.lie; status.staff.paralegal; status.standardChar (e.g. \"true\"); status.status (e.g. \"602\"); status.statusDate (e.g. \"2023-03-22\"); status.supplementalRegister (e.g. \"false\"); status.tm5Status (e.g. \"10\"); status.tm5StatusDef (e.g. \"This trademark application was refuse...\"); status.tm5StatusDesc (e.g. \"DEAD/APPLICATION/Refused/Dismissed or...\"); status.trademark (e.g. \"true\"); status.translation; status.useAmended (e.g. \"false\"); status.useCurr (e.g. \"false\"); status.usRegistrationNumber."
+    },
+    {
+      "id": "tsdr.fields.lastUpdate",
+      "kind": "field",
+      "binding": "tsdr",
+      "description": "Response fields of tsdr.lastUpdate, under caseUpdateInfo[]. Fields: name; value (e.g. \"97123456\")."
+    },
+    {
+      "id": "tsdr.fields.lastUpdate.caseData",
+      "kind": "field",
+      "binding": "tsdr",
+      "description": "Response fields of tsdr.lastUpdate, under caseUpdateInfo[].caseData. Fields: caseData.caseProsecutionData.lastModifiedDate (e.g. \"2023-03-22\"); caseData.caseStatusData.lastModifiedDate (e.g. \"2023-03-22\")."
+    }
+  ]
+}

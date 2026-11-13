@@ -1,0 +1,154 @@
+# Contributing
+
+Thanks for considering a contribution. This project is small enough that
+process is mostly conversational — open an issue describing what you want
+to do before sending anything non-trivial, and we'll figure it out together.
+
+## Ground rules
+
+- The server's whole reason for existing is to be a safe place to run untrusted
+  JavaScript against the public USPTO APIs. **Anything that weakens the sandbox is
+  out of scope.** That includes adding `fetch`, `import`, filesystem, env,
+  or subprocess access to the sandbox surface.
+- New SDK methods are welcome but must be paired with field/endpoint entries
+  in the corpus so `search_api` and `describe_schema` can surface them. Each
+  source owns its own file — `schema/{odp,tsdr}.json` — so add a hand-written
+  endpoint entry (signature, description, example) to the file for the source
+  you're touching, with an example that runs against the live API, then run
+  `node scripts/gen-sdk-reference.mjs` (a test fails if `docs/sdk-reference.md` is
+  stale). Don't hand-edit the generated `<binding>.fields.*` entries; regenerate them:
+  `pnpm build`, then `USPTO_API_KEY=... node scripts/capture-samples.mjs <dir>` and
+  `node scripts/gen-fields.mjs --source live=<dir> --source patent-dev=<dir>` (see
+  `scripts/field-samples.json`). Never commit captured responses: they are public
+  records that contain names and addresses.
+  Explicitly register each callable method in the source factory's `methods`
+  table as well. RPC dispatch only invokes registered methods; never expose a
+  generic HTTP client, cache, or other host implementation detail there.
+- File downloads (PDFs, bulk files, `search/download` CSV) stay out of the SDK;
+  return URLs instead.
+- Respect USPTO's limits: one request in flight per API key, and at least 5 s after
+  a `429`. Don't raise the default per-key concurrency or shorten the 429 pause.
+- USPTO keys are personal ("Do not share it with others"). Don't add any path where
+  one person's key serves other people.
+- Authenticated HTTP serving runs user code only in a separate process (the Deno
+  runner); don't add an in-process fallback there.
+- Public API shape (the three tools, the `odp.*` / `tsdr.*` globals) is the
+  contract; breaking changes need a major version bump and a migration note.
+
+## Development
+
+```bash
+pnpm install
+pnpm test                       # vitest, ~15 s; no keys or network needed
+pnpm typecheck                  # tsc --noEmit (src, test, web)
+pnpm lint                       # eslint
+pnpm dev                        # tsx src/bin.ts (stdio)
+pnpm dev --http --insecure      # local HTTP, no auth, bound to 127.0.0.1
+pnpm build                      # tsc + Vite (dist/web) + chmod
+USPTO_LIVE=1 pnpm test:live     # opt-in: every corpus example against the real USPTO APIs
+```
+
+Node 24 or 26 is required. TypeScript 7 runs side by side with the TS 6 API that
+tooling (typescript-eslint) needs — see the TS 7 notes in `CLAUDE.md`.
+
+Account-mode tests (`test/accounts.spec.ts`) need Deno and a disposable
+PostgreSQL in `TEST_DATABASE_URL`; see [docs/accounts.md](docs/accounts.md#verification-and-rollout)
+for a one-line Docker setup. Set `USPTO_REQUIRE_RUNNERS=1` (as CI does) to make
+missing runners or a missing database fail instead of skip. Live checks need your
+own `USPTO_API_KEY` / `USPTO_TSDR_API_KEY` (keep them in a gitignored `.env`; the
+live suite is read-only, sequential and small, and never runs in PR CI). Never
+commit keys.
+
+The HTTP integration test (`test/http-integration.spec.ts`) exercises a real
+`http.Server` against the v2 SDK's `createMcpHandler`/`toNodeHandler` over `fetch`,
+covering both the stateless `2026-07-28` leg and the legacy `initialize` fallback,
+including sandbox → SDK → mocked upstream. That's the canonical end-to-end check;
+please keep it green and add to it for new HTTP-visible behavior.
+
+`test/official-client.spec.ts` drives the same server with the real
+`@modelcontextprotocol/client` SDK, which builds the `_meta` envelope and routing
+headers itself — keep it passing whenever you touch the transport, since hand-built
+requests cannot catch a protocol misunderstanding shared by both sides.
+
+## Sandbox runners
+
+- `isolated-vm` 7 ships prebuilt binaries for Node 24 and 26 (macOS arm64, Linux
+  x64/arm64 glibc and musl, Windows x64); `pnpm install` needs no compiler.
+- The Deno runner starts `deno run --no-prompt` (no permissions) on a fixed
+  supervisor script and runs the user code in a Worker with its ambient globals
+  removed; the host owns the deadline and kills the process group. Install Deno to
+  test that path: <https://docs.deno.com/runtime/getting_started/installation/>.
+- `pickSandbox('auto')` prefers `isolate`, then `deno`, for single-user use. For
+  authenticated HTTP serving it allows only `deno` (and refuses `--sandbox isolate`).
+  With no runner, `execute` returns `SandboxUnavailable`.
+- Sandbox changes need positive AND negative tests for both runners
+  (`test/sandbox.spec.ts` runs its contract with `describe.each`). For lifecycle
+  fixes, check that the new test fails without the fix.
+
+## What needs work
+
+- Live TSDR captures for the trademark field dictionary (needs a TSDR key), and
+  live verification of the `tsdr.*` examples.
+- Distributed per-key admission for multi-replica deployments (today: one replica).
+- A small Cloudflare Workers deploy target sharing the core logic (today the
+  HTTP transport is Node-only).
+- Trademark (TTAB) decisions and proceedings, once USPTO publishes a public API spec.
+
+## Releasing
+
+Releases are **continuous** (`.github/workflows/release.yml`): every push to
+`main` is released — there is no Release PR and no batching.
+
+1. Land changes on `main` **via pull request** (never a direct push) using
+   [Conventional Commits](https://www.conventionalcommits.org/)
+   (`feat:`, `fix:`, `docs:`, `ci:`, …; add `!` or a `BREAKING CHANGE:` footer
+   for majors; CI enforces the format). The commit types determine the next SemVer version:
+   breaking → major, `feat` → minor, **everything else → at least a patch** —
+   every merge produces a tag and a CHANGELOG entry, by policy.
+2. On push, the `gates` job runs the complete CI workflow on that commit (audit,
+   typecheck, lint, build, tests on Node 24 and 26 with Postgres and both sandbox
+   runners, the npm-package/MCPB smoke test and the Docker smoke test). Then the
+   `cut` job (`contents: write`, dependencies installed with `--ignore-scripts`)
+   runs `scripts/release.mjs`, which computes the version, stamps `package.json`
+   and the `x-release-version` marker lines in `src/server/mcpServer.ts` and
+   `src/sdk/bindings.ts`, and prepends the CHANGELOG section (logic in
+   `scripts/release-lib.mjs`, covered by `test/release.spec.ts`); it builds, packs
+   the tarball, pushes a `chore(release): vX.Y.Z` commit with the annotated tag,
+   and creates the GitHub Release with the tarball attached. The release commit is
+   pushed with `GITHUB_TOKEN`, which GitHub never triggers workflows for — no
+   release loop.
+3. The `publish` job — holding only `id-token: write`, in the `npm` environment
+   (add required reviewers there to approve each publish) — downloads that exact
+   tarball and publishes it. It never checks out the repository or installs
+   dependencies.
+4. **Recovery**: `gh workflow run release.yml --ref main -f republish=true`
+   re-runs the gates and republishes the *current* version to npm (no bump,
+   no tag) — for when a publish failed after a tag already existed.
+
+Publishing is **tokenless** via [npm Trusted
+Publishing](https://docs.npmjs.com/trusted-publishers) (OIDC): the npm
+package settings register this repo's `release.yml` (and the `npm` environment) as
+a trusted publisher, so no npm token or secret exists anywhere; the job's
+`id-token: write` permission is what authenticates, and provenance is generated
+automatically. Workflow actions are pinned to commit SHAs; Dependabot
+(`.github/dependabot.yml`) proposes updates for npm packages, actions and the
+Docker base images. Patched versions of vulnerable transitive dev dependencies are
+pinned with `overrides:` in `pnpm-workspace.yaml`; remove an entry once its parent
+ships the fix.
+The `files` field in `package.json` ships only `dist/`, `schema/`,
+`README.md`, `LICENSE`, `NOTICE`, `CHANGELOG.md`, and `SECURITY.md`.
+
+Breaking changes additionally need a migration note in `docs/`.
+
+**First release.** This package starts at `0.1.0`. With no tags in the repository,
+`scripts/release.mjs` releases the version `package.json` already declares, using
+its hand-written `CHANGELOG.md` section (no bump, no release commit), and tags it.
+Before the first push to `main`: create the `npm` environment in the GitHub
+repository settings, and register this repository's `release.yml` as a trusted
+publisher in the npm settings for `@blen/uspto-mcp-server`, or the publish step
+fails.
+
+## Reporting security issues
+
+See [SECURITY.md](./SECURITY.md). **Do not** open a public issue for
+sandbox-escape reports.
