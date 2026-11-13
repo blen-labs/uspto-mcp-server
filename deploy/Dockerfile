@@ -3,7 +3,7 @@
 # ---- Stage 1: build ---------------------------------------------------------
 # isolated-vm 7 ships prebuilt binaries for Node 24/26 (glibc and musl), so no
 # compiler toolchain is needed.
-FROM node:24-bookworm-slim AS builder
+FROM node:25-bookworm-slim AS builder
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
@@ -21,7 +21,7 @@ RUN pnpm build && pnpm prune --prod
 FROM denoland/deno:bin-2.7.14 AS deno
 
 # ---- Stage 2: runtime -------------------------------------------------------
-FROM node:24-bookworm-slim AS runtime
+FROM node:25-bookworm-slim AS runtime
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates dumb-init \
