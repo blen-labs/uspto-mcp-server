@@ -229,6 +229,15 @@ describe.each([new IsolateRunner(), new DenoRunner()])('$kind runner contract', 
   });
 });
 
+describe.each([new IsolateRunner(), new DenoRunner()])('$kind runner with a failing bridge', runner => {
+  it('gives the program an error when the SDK dispatch itself rejects, and keeps running', async ({ skip }) => {
+    if (!(await runner.available())) return skip();
+    const rejecting = { dispatch: () => Promise.reject(undefined) };
+    const res = await runner.execute({ code: 'try { await odp.a(); return "no error"; } catch (e) { return [e.name, e.message]; }', bindings: ['odp'], timeoutMs: 3000 }, rejecting);
+    expect(res).toMatchObject({ ok: true, value: ['Error', 'The SDK call failed.'] });
+  });
+});
+
 describe.each([new IsolateRunner(), new DenoRunner()])('$kind memory limit', runner => {
   const run = (code: string) => runner.execute({ code, bindings: [], timeoutMs: 10_000, memoryMb: 64 }, echo);
   const MIB = 1024 * 1024;
@@ -282,6 +291,14 @@ describe('deno runner isolation (gated on availability)', () => {
     // Straight to the supervisor: no preflight has seen this code.
     const res = await superviseDirectly('return [typeof Deno, typeof fetch, typeof Worker, typeof WebSocket, typeof process, typeof Buffer, typeof global, typeof WebAssembly];');
     expect(res).toMatchObject({ t: 'done', ok: true, json: JSON.stringify(Array(8).fill('undefined')) });
+  });
+
+  it('keeps the runtime\'s own diagnostics out of the logs, and names memory when the heap limit ends the process', async ({ skip }) => {
+    if (!(await runner.available())) return skip();
+    const res = await run('console.log("mine"); const a = []; while (true) a.push(new Array(100000).fill("x" + a.length));', { memoryMb: 32, timeoutMs: 10_000 });
+    expect(res.ok).toBe(false);
+    expect(res.error?.message).toMatch(/memory/i);
+    expect(res.logs).toEqual(['mine']);
   });
 
   it('resolves only after its child process has exited (success, timeout, abort)', async ({ skip }) => {

@@ -101,6 +101,7 @@ export class DenoRunner implements SandboxRunner {
       let buffered = '';
       let bufferedBytes = 0;
       let pendingRpc = 0;
+      let stderrTail = '';
 
       // Choosing the outcome and tearing down are separate: the first terminal event fixes the
       // result, and the promise resolves only once the child has exited (bounded wait), so the
@@ -133,9 +134,15 @@ export class DenoRunner implements SandboxRunner {
       );
       child.on('error', err => settle({ ok: false, error: { name: 'SpawnError', message: err.message } }));
       // The exit code carries the reason: a last frame on stdout could arrive after this event.
-      child.on('exit', code => settle({ ok: false, error: code === MEMORY_EXIT_CODE
-        ? { name: 'MemoryLimitExceeded', message: `The program used more memory than its limit (memoryMb: ${memoryMb}). Request fewer records (limit), select fields (fields: [...]), or process the data in smaller steps.` }
-        : { name: 'ExitError', message: `The sandbox exited unexpectedly (code ${code}).` } }));
+      child.on('exit', (code, killedBy) => {
+        // What Deno and V8 wrote about the exit is for the operator, not for the caller.
+        if (!settled && code !== MEMORY_EXIT_CODE) log.warn('sandbox.exited', { code, signal: killedBy, stderr: stderrTail });
+        settle({ ok: false, error: code === MEMORY_EXIT_CODE
+          ? { name: 'MemoryLimitExceeded', message: `The program used more memory than its limit (memoryMb: ${memoryMb}). Request fewer records (limit), select fields (fields: [...]), or process the data in smaller steps.` }
+          : { name: 'ExitError', message: killedBy
+            ? `The sandbox process ended abnormally (${killedBy}). The usual cause is a program that fills the JavaScript heap (memoryMb: ${memoryMb}).`
+            : `The sandbox exited unexpectedly (code ${code}).` } });
+      });
       if (signal?.aborted) return onAbort();
       signal?.addEventListener('abort', onAbort, { once: true });
 
@@ -160,6 +167,10 @@ export class DenoRunner implements SandboxRunner {
           try {
             const res = await rpc.dispatch({ binding: msg.binding, path: msg.path as string[], args: msg.args }, { signal });
             send({ t: 'rpc-result', id: msg.id, ok: res.ok, value: res.value, error: res.error });
+          } catch {
+            // The bridge reports a failed call as a result. If it rejects instead, the program gets
+            // an error; a rejection that left this function would end the server process.
+            send({ t: 'rpc-result', id: msg.id, ok: false, error: { name: 'Error', message: 'The SDK call failed.' } });
           } finally {
             pendingRpc--;
           }
@@ -213,7 +224,8 @@ export class DenoRunner implements SandboxRunner {
         }
       });
       child.stderr.setEncoding('utf8');
-      child.stderr.on('data', (chunk: string) => { if (!settled) logs.push(chunk.trimEnd()); });
+      // Never into `logs`: a fatal error dump from V8 names addresses and the process id.
+      child.stderr.on('data', (chunk: string) => { stderrTail = (stderrTail + chunk).slice(-2000); });
       child.stdin.on('error', () => { /* child exited; exit handler settles */ });
     });
   }

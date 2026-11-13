@@ -120,7 +120,10 @@ export class IsolateRunner implements SandboxRunner {
         if (tooBig) return fail(tooBig.name, tooBig.message);
         pending++;
         try {
-          const result = await rpc.dispatch({ binding, path, args }, { signal: opts.signal });
+          let result: Awaited<ReturnType<RpcBridge['dispatch']>>;
+          // The bridge reports a failed call as a result. If it rejects instead, the program gets an error.
+          try { result = await rpc.dispatch({ binding, path, args }, { signal: opts.signal }); }
+          catch { return fail('Error', 'The SDK call failed.'); }
           return new ivm.ExternalCopy(result).copyInto();
         } finally {
           pending--;

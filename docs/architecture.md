@@ -236,7 +236,8 @@ Two runners:
   run if one stays; its `console` posts log messages. Deno runs with
   `--disallow-code-generation-from-strings`, so `eval` and `Function` throw. Frames to
   the host are token-prefixed JSON lines; the worker never sees the token, and any
-  other stdout bytes are treated as untrusted log text. The Node parent owns the
+  other stdout bytes are treated as untrusted log text. The child's stderr never
+  reaches the result: the host logs its tail when the child exits unexpectedly. The Node parent owns the
   deadline, kills the process group on every exit path, and resolves only after the
   child has exited (bounded wait), so an execution slot is never released while its
   process is alive. `memoryMb` is applied with `--v8-flags=--max-old-space-size`,
