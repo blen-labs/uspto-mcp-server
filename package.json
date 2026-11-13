@@ -1,6 +1,6 @@
 {
   "name": "@blen/uspto-mcp-server",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Code-mode MCP server for the USPTO Open Data Portal (patents, PTAB, petitions, office actions, bulk datasets) and TSDR trademark status APIs.",
   "license": "Apache-2.0",
   "author": "BLEN, Inc. (https://blenlabs.com)",

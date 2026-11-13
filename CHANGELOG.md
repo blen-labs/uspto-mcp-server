@@ -5,6 +5,17 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 
 ## [Unreleased]
 
+
+## [0.1.1] - 2026-11-13
+
+### Fixed
+- derive the manifest Node range from engines and smoke it on Node 24 (mcpb)
+- declare the same Node range as engines (mcpb)
+
+### Changed
+- make Node and @types/node major bumps deliberate (deps)
+- package and release on Node 26 and test with Deno 2.9.8
+- run Node 26 LTS on Debian 13 with Deno 2.9.8, pinned by digest (docker)
 ## [0.1.0] - 2026-11-12
 
 ### Added
@@ -36,5 +47,6 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 - Docker image (Node 24 + Deno), an MCPB bundle (manifest v0.4) that prompts for keys, and
   third-party license notices in every artifact.
 
-[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/blen-labs/uspto-mcp-server/releases/tag/v0.1.0
