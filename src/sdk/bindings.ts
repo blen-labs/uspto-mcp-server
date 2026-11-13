@@ -26,6 +26,6 @@ export function sdkFromSources(sources: Source[]): Sdk {
     methods: Object.freeze(methods),
     meta: sources.map(({ name, label, enabled, disabledReason }) => ({ name, label, enabled, disabledReason })),
     registeredNames: sources.map(s => s.name),
-    version: () => '0.1.1', // x-release-version
+    version: () => '0.1.2', // x-release-version
   };
 }
