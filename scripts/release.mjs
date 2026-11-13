@@ -55,8 +55,9 @@ const commits = raw
     const [subject, body = ''] = r.split(FIELD);
     return { subject: subject.trim(), body };
   })
-  // Never let a prior release commit feed the next bump.
-  .filter(c => !c.subject.startsWith('chore(release):'));
+  // Never let a prior release commit feed the next bump, nor a merge message that arrived as a
+  // single-parent commit (e.g. a squash titled "Merge pull request #N"); --no-merges skips real ones.
+  .filter(c => !c.subject.startsWith('chore(release):') && !/^Merge (pull request|branch) /.test(c.subject));
 
 if (commits.length === 0) {
   console.log(`release: no commits since ${lastTag} - nothing to release`);
