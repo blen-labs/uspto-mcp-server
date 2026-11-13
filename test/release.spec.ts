@@ -103,13 +103,17 @@ describe('release.mjs against disposable repositories', () => {
     writeFileSync(out, '');
     execFileSync(process.execPath, ['scripts/release.mjs'], { cwd: dir, env: { ...process.env, GITHUB_OUTPUT: out, RELEASE_DATE: '2026-11-12' } });
     const outputs = Object.fromEntries(readFileSync(out, 'utf8').trim().split('\n').map(l => l.split('=') as [string, string]));
-    return { outputs, notes: readFileSync(join(dir, 'release-notes.generated.md'), 'utf8'), pkg: JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) };
+    return { outputs, notes: readFileSync(join(dir, 'release-notes.generated.md'), 'utf8'), pkg: JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')), changelog: readFileSync(join(dir, 'CHANGELOG.md'), 'utf8') };
   };
 
   it('a fresh repository (no tags) releases the declared version with its hand-written notes', async () => {
-    const { outputs, notes, pkg } = await run(false);
+    const { outputs, notes, pkg, changelog } = await run(false);
     expect(outputs).toMatchObject({ released: 'true', version: pkg.version, bump: 'initial' });
-    expect(notes).toMatch(/Code-mode MCP server for the USPTO Open Data Portal/);
+    // The notes are the CHANGELOG's own section for the declared version (whatever it says today).
+    const section = changelog.split(/^## /m).find((s) => s.startsWith(`[${pkg.version}]`));
+    expect(section).toBeDefined();
+    expect(notes.trim()).not.toBe('');
+    expect(notes.trim()).toBe(section!.split('\n').slice(1).join('\n').trim());
     expect(notes).not.toContain("[Unreleased]");
   });
 
