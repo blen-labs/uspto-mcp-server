@@ -167,7 +167,7 @@ The HTTP transport implements the stateless MCP `2026-07-28` Streamable HTTP pro
 - Listening on anything but loopback requires `USPTO_PUBLIC_ORIGIN` or `USPTO_ALLOWED_HOSTS`: every request's `Host` must match the configured names (DNS-rebinding protection); the trusted origin is never taken from the request. Browser `Origin`s other than the server's own, loopback, or `USPTO_ALLOWED_ORIGINS` get `403`.
 - Request bodies are capped at 1 MiB, and tool arguments at a fixed number of elements.
 
-It also serves OAuth 2.0 Protected Resource Metadata (RFC 9728), per-IP rate limiting and per-subject daily quotas. A Railway walkthrough is in [`deploy/RAILWAY.md`](./deploy/RAILWAY.md); the [`Dockerfile`](./deploy/Dockerfile) runs on Node 24 with Deno included.
+It also serves OAuth 2.0 Protected Resource Metadata (RFC 9728), per-IP rate limiting and per-subject daily quotas. A Railway walkthrough is in [`deploy/RAILWAY.md`](./deploy/RAILWAY.md); the [`Dockerfile`](./deploy/Dockerfile) runs on Node 26 (LTS) with Deno included.
 
 The per-key gates, hourly buckets and quotas are in memory, so run **one replica** — and avoid deploys where an old and a new instance serve at the same time — or USPTO sees concurrent requests with one key.
 
