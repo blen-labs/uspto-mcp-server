@@ -1,0 +1,40 @@
+{
+  "sources": {
+    "live": "Captured from the live USPTO APIs with scripts/capture-samples.mjs (see the capture date in schema/*.json provenance).",
+    "patent-dev": "Sample responses from github.com/patent-dev/uspto-odp (MIT), demo/examples, commit 8b4114dd095fccc126fcf16b4884755f7b14c3b3 (2026-11-08). Used only where no live capture exists (TSDR, pending a TSDR key)."
+  },
+  "entries": [
+    { "file": "patents-search.json", "source": "live", "binding": "odp", "dataset": "patents", "bag": "patentFileWrapperDataBag", "methods": "odp.patents.search / odp.patents.get (and the per-application sub-resources)", "query": "odp",
+      "capture": { "method": "patents.search", "args": [{ "q": "applicationMetaData.applicationTypeLabelName:Utility AND applicationMetaData.patentNumber:*", "sort": "applicationMetaData.filingDate desc", "limit": 5 }] } },
+    { "file": "patents-documents.json", "source": "live", "binding": "odp", "dataset": "patents.documents", "bag": "documentBag", "methods": "odp.patents.documents",
+      "capture": { "method": "patents.documents", "args": ["17248024"] } },
+    { "file": "patents-status-codes.json", "source": "live", "binding": "odp", "dataset": "patents.statusCodes", "bag": "statusCodeBag", "methods": "odp.patents.statusCodes",
+      "capture": { "method": "patents.statusCodes", "args": [{ "limit": 20 }] } },
+    { "file": "ptab-proceedings.json", "source": "live", "binding": "odp", "dataset": "ptab.proceedings", "bag": "patentTrialProceedingDataBag", "methods": "odp.ptab.proceedings.search / get", "query": "odp",
+      "capture": { "method": "ptab.proceedings.search", "args": [{ "limit": 5 }] } },
+    { "file": "ptab-decisions.json", "source": "live", "binding": "odp", "dataset": "ptab.decisions", "bag": "patentTrialDocumentDataBag", "methods": "odp.ptab.decisions.search / get / byTrial", "query": "odp",
+      "capture": { "method": "ptab.decisions.search", "args": [{ "limit": 5 }] } },
+    { "file": "ptab-documents.json", "source": "live", "binding": "odp", "dataset": "ptab.documents", "bag": "patentTrialDocumentDataBag", "methods": "odp.ptab.documents.search / get / byTrial", "query": "odp",
+      "capture": { "method": "ptab.documents.search", "args": [{ "limit": 5 }] } },
+    { "file": "ptab-appeals.json", "source": "live", "binding": "odp", "dataset": "ptab.appeals", "bag": "patentAppealDataBag", "methods": "odp.ptab.appeals.search / get / byAppeal", "query": "odp",
+      "capture": { "method": "ptab.appeals.search", "args": [{ "limit": 5 }] } },
+    { "file": "ptab-interferences.json", "source": "live", "binding": "odp", "dataset": "ptab.interferences", "bag": "patentInterferenceDataBag", "methods": "odp.ptab.interferences.search / get / byInterference", "query": "odp",
+      "capture": { "method": "ptab.interferences.search", "args": [{ "limit": 5 }] } },
+    { "file": "petitions.json", "source": "live", "binding": "odp", "dataset": "petitions", "bag": "petitionDecisionDataBag", "methods": "odp.petitions.search / get", "query": "odp",
+      "capture": { "method": "petitions.search", "args": [{ "limit": 5 }] } },
+    { "file": "office-actions.json", "source": "live", "binding": "odp", "dataset": "officeActions", "bag": "officeActionDataBag", "methods": "odp.officeActions.search / get", "query": "odp",
+      "capture": { "method": "officeActions.search", "args": [{ "limit": 5 }] } },
+    { "file": "oa-text.json", "source": "live", "binding": "odp", "dataset": "oa.text", "bag": "response.docs", "methods": "odp.oa.text.search (legacy DSAPI)", "query": "dsapi",
+      "capture": { "method": "oa.text.search", "args": ["*:*", { "rows": 5 }] } },
+    { "file": "oa-rejections.json", "source": "live", "binding": "odp", "dataset": "oa.rejections", "bag": "response.docs", "methods": "odp.oa.rejections.search (legacy DSAPI)", "query": "dsapi",
+      "capture": { "method": "oa.rejections.search", "args": ["*:*", { "rows": 5 }] } },
+    { "file": "oa-citations.json", "source": "live", "binding": "odp", "dataset": "oa.citations", "bag": "response.docs", "methods": "odp.oa.citations.search (legacy DSAPI)", "query": "dsapi",
+      "capture": { "method": "oa.citations.search", "args": ["*:*", { "rows": 5 }] } },
+    { "file": "oa-enriched-citations.json", "source": "live", "binding": "odp", "dataset": "oa.enrichedCitations", "bag": "response.docs", "methods": "odp.oa.enrichedCitations.search (legacy DSAPI)", "query": "dsapi",
+      "capture": { "method": "oa.enrichedCitations.search", "args": ["*:*", { "rows": 5 }] } },
+    { "file": "bulk.json", "source": "live", "binding": "odp", "dataset": "bulk", "bag": "bulkDataProductBag", "methods": "odp.bulk.search / get", "query": "odp-get",
+      "capture": { "method": "bulk.search", "args": [{ "limit": 10 }] } },
+    { "file": "get_trademark_status/response.json", "source": "patent-dev", "binding": "tsdr", "dataset": "status", "bag": "trademarks", "methods": "tsdr.status / tsdr.multiStatus (transactionList[].trademarks[])" },
+    { "file": "get_trademark_last_update/response.json", "source": "patent-dev", "binding": "tsdr", "dataset": "lastUpdate", "bag": "caseUpdateInfo", "methods": "tsdr.lastUpdate" }
+  ]
+}
