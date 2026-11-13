@@ -10,6 +10,16 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 
 
 
+
+## [0.2.3] - 2026-11-13
+
+### Fixed
+- answer 400, not 500, for a connection request without redirect_uri (accounts)
+- keep rotating keys past a credential that cannot be opened (accounts)
+- write the Deno supervisor again when it was deleted (sandbox)
+
+### Changed
+- the anonymous endpoint has the documentation tools only (accounts)
 ## [0.2.2] - 2026-11-13
 
 ### Changed
@@ -90,7 +100,8 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 - Docker image (Node 24 + Deno), an MCPB bundle (manifest v0.4) that prompts for keys, and
   third-party license notices in every artifact.
 
-[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.1.2...v0.2.0
