@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { TEARDOWN, type ExecuteOptions, type ExecuteResult, type RpcBridge, type SandboxRunner } from './types.js';
@@ -45,6 +45,7 @@ const MEMORY_HEADROOM_MB = 96;
 export class DenoRunner implements SandboxRunner {
   kind = 'deno' as const;
   private static supervisorPath?: string;
+  private static supervisorDir?: string;
 
   constructor(private readonly limits: SandboxLimits = DEFAULT_LIMITS) {}
 
@@ -56,17 +57,24 @@ export class DenoRunner implements SandboxRunner {
     });
   }
 
-  /** The supervisor holds no user data; it is written once per process, readable only by us. */
+  /**
+   * The supervisor holds no user data; it is written once per process, readable only by us, and
+   * written again if a temporary-file cleaner (or an operator) removed it while the server runs.
+   */
   private static supervisor(): string {
-    if (!DenoRunner.supervisorPath) {
+    if (DenoRunner.supervisorPath && existsSync(DenoRunner.supervisorPath)) return DenoRunner.supervisorPath;
+    // Reuse the private directory when only the file went missing: a new one would leak the old
+    // directory and stack another exit hook.
+    if (!DenoRunner.supervisorDir || !existsSync(DenoRunner.supervisorDir)) {
       const dir = mkdtempSync(join(tmpdir(), 'uspto-deno-'));
       chmodSync(dir, 0o700);
-      const path = join(dir, 'supervisor.js');
-      writeFileSync(path, SUPERVISOR_SOURCE, { mode: 0o600 });
-      DenoRunner.supervisorPath = path;
+      DenoRunner.supervisorDir = dir;
       process.once('exit', () => { try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } });
     }
-    return DenoRunner.supervisorPath;
+    const path = join(DenoRunner.supervisorDir, 'supervisor.js');
+    writeFileSync(path, SUPERVISOR_SOURCE, { mode: 0o600 });
+    DenoRunner.supervisorPath = path;
+    return path;
   }
 
   async execute(opts: ExecuteOptions, rpc: RpcBridge): Promise<ExecuteResult> {

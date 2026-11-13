@@ -147,9 +147,19 @@ The production server assumes one trusted proxy hop, as on Railway.
 ## Encryption rotation
 
 Add the new key to `ENCRYPTION_KEYS_JSON`, retaining the old one, and set the new
-active ID. `Store.rotateKeys(batchSize)` reencrypts stored credentials in locked
-batches and records an audit event. Keep old keys until all rows and required
-backups have been migrated or expired. Loss of an encryption key makes affected
+active ID. Then run, with the same account environment as the server:
+
+```bash
+node dist/bin.js --rotate-keys      # run it where the database is reachable, e.g. inside the deployed service
+```
+
+It re-encrypts stored credentials in locked batches (`Store.rotateAllKeys`) and
+records a `credential.reencrypted` audit event per row. A row that cannot be opened
+(its key ID is no longer in `ENCRYPTION_KEYS_JSON`, or it is damaged) is skipped
+and recorded as `credential.reencrypt_failed`; rotation continues with the next
+row. The command logs how many rows rotated and which owner and kind failed, never
+key material, and exits 1 if any row failed. Keep old keys until all rows and
+required backups have been migrated or expired. Loss of an encryption key makes affected
 credentials unrecoverable; users would need to save them again.
 
 ## Verification and rollout

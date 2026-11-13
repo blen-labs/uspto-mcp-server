@@ -98,15 +98,20 @@ export function installPortal(
     for (const kind of present) await store.saveKey(owner, kind, body[KEY_FIELDS[kind]] as string, actor);
     return true;
   }
+  /** What the Connect and Consent pages show, or undefined when the signed query lacks the client or its redirect. */
   async function connection(query: string) {
     const params = new URLSearchParams(query);
+    const clientId = params.get('client_id');
+    const redirectUri = params.get('redirect_uri');
+    if (!clientId || !redirectUri || !URL.canParse(redirectUri)) return undefined;
     const client = await (await auth.$context).adapter.findOne<{ name?: string }>({
-      model: 'oauthClient', where: [{ field: 'clientId', value: params.get('client_id')! }],
+      model: 'oauthClient', where: [{ field: 'clientId', value: clientId }],
     });
-    const redirect = new URL(params.get('redirect_uri')!);
+    const redirect = new URL(redirectUri);
     return { client: client?.name || 'This application', destination: redirect.host,
       local: ['localhost', '127.0.0.1', '[::1]'].includes(redirect.hostname) };
   }
+  const EXPIRED = 'This connection request expired. Start again from your AI assistant.';
   async function continueWith(req: Request, res: Response, path: string, body: object) {
     const headers = fromNodeHeaders(req.headers);
     headers.delete('content-length');
@@ -131,8 +136,9 @@ export function installPortal(
     const logged = await verified(req);
     if (!logged) return error(res, 401, 'Sign in to continue.');
     const query = await validQuery(req.query.oauth_query);
-    if (!query) return error(res, 400, 'This connection request expired. Start again from your AI assistant.');
-    res.json({ ...await connection(query), ...await account(logged.user) });
+    const shown = query && await connection(query);
+    if (!shown) return error(res, 400, EXPIRED);
+    res.json({ ...shown, ...await account(logged.user) });
   });
   api.post('/connect', async (req, res) => {
     const logged = await verified(req);
@@ -184,9 +190,10 @@ export function installPortal(
     const logged = await verified(req);
     if (!logged) return error(res, 401, 'Sign in to continue.');
     const query = await validQuery(req.query.oauth_query);
-    if (!query) return error(res, 400, 'This connection request expired. Start again from your AI assistant.');
+    const shown = query && await connection(query);
+    if (!shown) return error(res, 400, EXPIRED);
     const keys = await store.keyStatus(personalOwner(logged.user.id));
-    res.json({ ...await connection(query), email: logged.user.email, keys: { odp: keys.odp.connected, tsdr: keys.tsdr.connected } });
+    res.json({ ...shown, email: logged.user.email, keys: { odp: keys.odp.connected, tsdr: keys.tsdr.connected } });
   });
   api.post('/consent', async (req, res) => {
     const logged = await verified(req);

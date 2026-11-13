@@ -14,6 +14,9 @@ const context = (kind: KeyKind, owner: string) => `uspto-${kind}:${owner}`;
 
 export interface KeyStatus { connected: boolean; updatedAt?: Date }
 
+/** Position in (owner, kind) order: rotation resumes after it. */
+export interface RotationCursor { owner: string; kind: string }
+
 export class Store {
   constructor(
     readonly pool: Pool,
@@ -141,20 +144,38 @@ export class Store {
     );
     return result.rows[0].count <= maximum;
   }
-  async rotateKeys(batchSize = 100) {
+  /**
+   * Re-encrypts one locked batch of credentials that are not under the active key, in key order
+   * after `after`. A row that cannot be opened (its key was removed, or it is damaged) is skipped
+   * and audited, never the batch: one bad row must not stop every later row from rotating.
+   * `next` is the cursor for the following batch, or undefined when this was the last one.
+   */
+  async rotateKeys(batchSize = 100, after?: RotationCursor): Promise<{ rotated: number; failed: RotationCursor[]; next?: RotationCursor }> {
     if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 1000)
       throw new Error('Invalid rotation batch size');
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
       const rows = await client.query(
-        "SELECT owner,kind,ciphertext FROM credentials WHERE ciphertext->>'kid' <> $1 ORDER BY owner,kind LIMIT $2 FOR UPDATE",
-        [this.keyring.activeId, batchSize],
+        `SELECT owner,kind,ciphertext FROM credentials WHERE ciphertext->>'kid' IS DISTINCT FROM $1
+         AND ($3::text IS NULL OR (owner,kind) > ($3::text,$4::text)) ORDER BY owner,kind LIMIT $2 FOR UPDATE`,
+        [this.keyring.activeId, batchSize, after?.owner ?? null, after?.kind ?? null],
       );
+      let rotated = 0;
+      const failed: RotationCursor[] = [];
       for (const row of rows.rows) {
-        if (!isKeyKind(row.kind)) continue;
-        const ctx = context(row.kind, row.owner);
-        const sealed = this.keyring.seal(this.keyring.open(row.ciphertext, ctx), ctx);
+        let sealed;
+        // A damaged row (no key ID, unknown kind, wrong key) is reported, never silently left behind.
+        try {
+          if (!isKeyKind(row.kind)) throw new Error('Unknown credential kind');
+          const ctx = context(row.kind, row.owner);
+          sealed = this.keyring.seal(this.keyring.open(row.ciphertext, ctx), ctx);
+        }
+        catch {
+          failed.push({ owner: row.owner, kind: row.kind });
+          await client.query('INSERT INTO audit_events(tenant,actor,action) VALUES($1,$2,$3)', [row.owner, 'service-operator', 'credential.reencrypt_failed']);
+          continue;
+        }
         await client.query('UPDATE credentials SET ciphertext=$3 WHERE owner=$1 AND kind=$2', [
           row.owner,
           row.kind,
@@ -165,15 +186,29 @@ export class Store {
           'service-operator',
           'credential.reencrypted',
         ]);
+        rotated++;
       }
       await client.query('COMMIT');
-      return rows.rowCount ?? 0;
+      const last = rows.rows.at(-1);
+      return { rotated, failed, next: rows.rows.length === batchSize && last ? { owner: last.owner, kind: last.kind } : undefined };
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
     } finally {
       client.release();
     }
+  }
+  /** Rotates every credential, batch by batch. Rows that cannot be opened are reported, not retried. */
+  async rotateAllKeys(batchSize = 100): Promise<{ rotated: number; failed: RotationCursor[] }> {
+    let rotated = 0, cursor: RotationCursor | undefined;
+    const failed: RotationCursor[] = [];
+    do {
+      const batch = await this.rotateKeys(batchSize, cursor);
+      rotated += batch.rotated;
+      failed.push(...batch.failed);
+      cursor = batch.next;
+    } while (cursor);
+    return { rotated, failed };
   }
   async cleanup() {
     await this.pool.query('DELETE FROM request_limits WHERE expires_at<now()');

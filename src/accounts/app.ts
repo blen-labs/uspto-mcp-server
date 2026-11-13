@@ -70,7 +70,7 @@ export async function createAccountApp(
   store: Store,
   deps: CatalogDeps,
   fetcher: typeof fetch = fetch,
-  /** Catalog for the anonymous endpoint (see publicDependencies): no subject, keyed sources only via shared operator keys. */
+  /** Catalog for the anonymous endpoint (see publicDependencies): documentation tools only, no subject, no USPTO keys. */
   publicDeps: CatalogDeps,
 ): Promise<{ app: express.Express; auth: Auth; mcp: ReturnType<typeof createMcpHandler>; close: () => Promise<void> }> {
   const app = express();

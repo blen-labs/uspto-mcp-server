@@ -355,6 +355,19 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     }
     expect(await (await fetch(`${config.origin}/api/portal/config`)).json()).toMatchObject({ google: true, email: false });
   });
+  // OAuth 2.0 lets a client with one registered URI omit redirect_uri. Better Auth refuses that, so
+  // a signed Connect/Consent query always names one; the portal still answers 400, not 500, without it.
+  it('refuses an authorization request without redirect_uri before the Connect page', async () => {
+    const client = await register();
+    const query = new URLSearchParams({
+      client_id: client.client_id, response_type: 'code', scope: 'uspto:read', resource: `${config.origin}/mcp/account`,
+      code_challenge: createHash('sha256').update(randomToken()).digest('base64url'), code_challenge_method: 'S256', state: randomToken(),
+    });
+    let response = await browser(`${config.origin}/api/auth/oauth2/authorize?${query}`, { headers: { Accept: 'text/html', 'Sec-Fetch-Mode': 'navigate' } });
+    if (response.headers.get('content-type')?.includes('application/json')) response = await browser(new URL((await response.json() as any).url, config.origin));
+    expect(new URL(response.url).pathname).not.toBe('/connect');
+    await response.arrayBuffer();
+  });
   it('validates the separate connection step, preserves saved keys on failure, and allows cancellation', async () => {
     const { oauth_query, state } = await beginAuthorization();
     const payload = { oauth_query, decision: 'continue' };
@@ -574,6 +587,28 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     await (await service.auth.$context).adapter.update({ model: 'user', where: [{ field: 'id', value: alice.id }], update: { emailVerified: false } });
     expect((await mcp(a.access_token)).status).toBe(401);
     await (await service.auth.$context).adapter.update({ model: 'user', where: [{ field: 'id', value: alice.id }], update: { emailVerified: true } });
+  });
+  it('rotates stored keys past a row it cannot open, batch by batch', async () => {
+    const k1 = randomBytes(32), k2 = randomBytes(32);
+    const before = new Store(pool, new Keyring('k1', { k1 }));
+    const owners = ['rot:a', 'rot:b', 'rot:c'];
+    for (const owner of owners) await before.saveKey(owner, 'odp', `key-${owner}`, owner);
+    // The first row in key order points at a key that is no longer in the keyring; another lost its key ID.
+    await pool.query("UPDATE credentials SET ciphertext=jsonb_set(ciphertext,'{kid}','\"gone\"') WHERE owner='rot:a'");
+    await before.saveKey('rot:d', 'odp', 'key-rot:d', 'rot:d');
+    await pool.query("UPDATE credentials SET ciphertext=ciphertext - 'kid' WHERE owner='rot:d'");
+    const after = new Store(pool, new Keyring('k2', { k1, k2 }));
+    // Batches of one exercise the cursor; other tests' rows (another key) are skipped the same way.
+    const { rotated, failed } = await after.rotateAllKeys(1);
+    expect(failed).toContainEqual({ owner: 'rot:a', kind: 'odp' });
+    expect(failed).toContainEqual({ owner: 'rot:d', kind: 'odp' });
+    expect(rotated).toBe(2);
+    for (const owner of ['rot:b', 'rot:c']) expect(await after.getKey(owner, 'odp')).toBe(`key-${owner}`);
+    const kids = await pool.query("SELECT owner, ciphertext->>'kid' AS kid FROM credentials WHERE owner LIKE 'rot:%' ORDER BY owner");
+    expect(kids.rows).toEqual([{ owner: 'rot:a', kid: 'gone' }, { owner: 'rot:b', kid: 'k2' }, { owner: 'rot:c', kid: 'k2' }, { owner: 'rot:d', kid: null }]);
+    const audit = await pool.query("SELECT action FROM audit_events WHERE tenant='rot:a' AND action='credential.reencrypt_failed'");
+    expect(audit.rowCount).toBe(1);
+    expect(await after.rotateAllKeys(1)).toMatchObject({ rotated: 0 });
   });
   it('rotates refresh tokens and honors access token revocation', async () => {
     const a = await token();
