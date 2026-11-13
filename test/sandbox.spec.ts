@@ -270,6 +270,14 @@ describe('deno runner isolation (gated on availability)', () => {
     expect(res).toMatchObject({ ok: true, value: 'ok' });
   });
 
+  it('writes its supervisor again when a cleaner deleted it', async ({ skip }) => {
+    if (!(await runner.available())) return skip();
+    expect(await run('return 1')).toMatchObject({ ok: true, value: 1 });
+    const { rmSync } = await import('node:fs');
+    rmSync((DenoRunner as unknown as { supervisorPath: string }).supervisorPath);
+    expect(await run('return 2')).toMatchObject({ ok: true, value: 2 });
+  });
+
   it('cannot build code from a string', async ({ skip }) => {
     if (!(await runner.available())) return skip();
     const res = await run('const c = "constr" + "uctor"; const F = (async () => {})[c][c]; try { F("return 1"); return "built"; } catch (e) { return e.name; }');
