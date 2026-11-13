@@ -65,8 +65,23 @@ export function preflight(code: string): PolicyResult {
       }
     },
     MemberExpression(node: any) {
-      if (!node.computed && node.property?.type === 'Identifier' && BANNED_MEMBERS.has(node.property.name)) {
-        errors.push(`access to .${node.property.name} is not allowed`);
+      // `a.constructor`, `a['constructor']` and a template literal without substitutions. A
+      // fully dynamic key (`a[k]`) cannot be decided statically: the runners are the boundary.
+      const p = node.property;
+      const name = !node.computed && p?.type === 'Identifier' ? p.name
+        : node.computed && p?.type === 'Literal' && typeof p.value === 'string' ? p.value
+        : node.computed && p?.type === 'TemplateLiteral' && p.expressions.length === 0 ? p.quasis[0]?.value?.cooked
+        : undefined;
+      if (name !== undefined && BANNED_MEMBERS.has(name)) errors.push(`access to .${name} is not allowed`);
+    },
+    // `const { constructor: F } = x` reads the same member without a MemberExpression.
+    ObjectPattern(node: any) {
+      for (const prop of node.properties) {
+        const key = prop.type === 'Property' ? prop.key : undefined;
+        const name = key?.type === 'Identifier' && !prop.computed ? key.name
+          : key?.type === 'Literal' && typeof key.value === 'string' ? key.value
+          : undefined;
+        if (name !== undefined && BANNED_MEMBERS.has(name)) errors.push(`access to .${name} is not allowed`);
       }
     },
     MetaProperty(node: any) {

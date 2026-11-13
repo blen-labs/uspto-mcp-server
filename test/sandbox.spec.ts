@@ -27,6 +27,11 @@ describe('sandbox policy preflight', () => {
 
   it('rejects __proto__ access', () => {
     expect(preflight(`const x = {}; x.__proto__;`).ok).toBe(false);
+    // The same members through a string key or a destructuring pattern.
+    expect(preflight(`return []['constructor']['constructor']`).ok).toBe(false);
+    expect(preflight("return [][`prototype`]").ok).toBe(false);
+    expect(preflight(`const { constructor: F } = () => {}; return F`).ok).toBe(false);
+    expect(preflight(`const r = { a: 1 }; return r['a'] + r.a`).ok).toBe(true);
   });
 
   it('rejects dynamic import', () => {
