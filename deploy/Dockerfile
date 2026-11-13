@@ -18,7 +18,7 @@ COPY legal ./legal
 RUN pnpm build && pnpm prune --prod
 
 # ---- Deno: the process-isolated sandbox used for multi-user HTTP serving -----
-FROM denoland/deno:bin-2.7.14 AS deno
+FROM denoland/deno:bin-2.9.8 AS deno
 
 # ---- Stage 2: runtime -------------------------------------------------------
 FROM node:24-bookworm-slim AS runtime
