@@ -126,8 +126,10 @@ describe('release.mjs against disposable repositories', () => {
   // The release commit is pushed with an app token, which (unlike GITHUB_TOKEN) triggers workflows.
   // Normally its tag makes tag..HEAD empty; this pins the second guard for when it doesn't (e.g. a
   // release commit that landed without its tag): chore(release) commits never cause a release.
-  it('a release commit alone releases nothing', async () => {
-    const { outputs } = await run(true, 'chore(release): v0.1.1');
-    expect(outputs).toMatchObject({ released: 'false' });
+  it('a release commit or a merge message alone releases nothing', async () => {
+    for (const subject of ['chore(release): v0.1.1', 'Merge pull request #5 from blen-labs/some-branch']) {
+      const { outputs } = await run(true, subject);
+      expect(outputs, subject).toMatchObject({ released: 'false' });
+    }
   });
 });
