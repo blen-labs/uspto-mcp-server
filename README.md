@@ -1,4 +1,4 @@
-# USPTO MCP Server
+# Patents & Trademarks MCP
 
 [![CI](https://github.com/blen-labs/uspto-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/blen-labs/uspto-mcp-server/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@blen/uspto-mcp-server.svg)](https://www.npmjs.com/package/@blen/uspto-mcp-server)

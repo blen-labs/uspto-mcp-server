@@ -36,7 +36,7 @@ export function Home() {
   const publicUrl = config?.publicMcpUrl ?? `${window.location.origin}/mcp`;
   return (
     <Shell
-      title="Connect USPTO MCP to your AI assistant"
+      title="Connect Patents & Trademarks MCP to your AI assistant"
       description="Search USPTO patent, PTAB, office action and trademark data from your AI assistant."
     >
       <p className="text-muted-foreground text-sm">

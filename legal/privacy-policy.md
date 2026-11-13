@@ -1,8 +1,8 @@
-# Privacy Policy — USPTO MCP (by BLEN)
+# Privacy Policy — Patents & Trademarks MCP (by BLEN)
 
 _Last updated: 2026-11-12_
 
-This policy describes how **USPTO MCP**, powered by
+This policy describes how **Patents & Trademarks MCP**, powered by
 `@blen/uspto-mcp-server` (the "Service", operated by BLEN, Inc.), handles data
 when accessed from an MCP client such as Claude, ChatGPT, or Gemini Enterprise.
 

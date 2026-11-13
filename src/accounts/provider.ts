@@ -92,7 +92,7 @@ export async function initializeAuth(auth: Auth, config: AccountConfig, store: S
     const resource = `${config.origin}${ACCOUNT_MCP_PATH}`;
     if (!await context.adapter.findOne({ model: 'oauthResource', where: [{ field: 'identifier', value: resource }] })) {
       await context.adapter.create({ model: 'oauthResource', data: {
-        identifier: resource, name: 'USPTO MCP', allowedScopes: SCOPES,
+        identifier: resource, name: 'Patents & Trademarks MCP', allowedScopes: SCOPES,
         disabled: false, policyVersion: 1, createdAt: new Date(), updatedAt: new Date(),
       } });
     }

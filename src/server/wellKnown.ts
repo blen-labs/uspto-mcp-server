@@ -13,6 +13,6 @@ export function oauthProtectedResource(cfg: AuthConfig, resourceUrl: string) {
     bearer_methods_supported: ['header'],
     scopes_supported: cfg.scopes ?? [],
     resource_documentation: 'https://github.com/blen-labs/uspto-mcp-server#self-hosting-remote-http',
-    resource_name: 'USPTO MCP Server',
+    resource_name: 'Patents & Trademarks MCP',
   };
 }

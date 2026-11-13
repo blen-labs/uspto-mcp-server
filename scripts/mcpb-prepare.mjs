@@ -15,7 +15,7 @@ export function buildManifest(pkg) {
   return {
     manifest_version: '0.4',
     name: 'uspto-mcp-server',
-    display_name: 'USPTO MCP (Code Mode)',
+    display_name: 'Patents & Trademarks MCP',
     version: pkg.version,
     description:
       'Code-mode MCP server for the USPTO Open Data Portal (patents, PTAB, petitions, office actions, bulk datasets) and TSDR trademark status, via odp.* and tsdr.* SDK bindings.',

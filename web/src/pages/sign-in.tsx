@@ -25,7 +25,7 @@ export function SignIn() {
   return (
     <Shell
       title={oauthQuery ? 'Sign in to connect' : 'Your account'}
-      description={oauthQuery ? 'Sign in to connect your AI assistant to USPTO MCP.' : 'Sign in to manage your USPTO API keys.'}
+      description={oauthQuery ? 'Sign in to connect your AI assistant to Patents & Trademarks MCP.' : 'Sign in to manage your USPTO API keys.'}
     >
       {error && <Notice>{error}</Notice>}
       <Button type="button" variant="outline" className="w-full" disabled={busy} onClick={google}>

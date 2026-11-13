@@ -1,10 +1,10 @@
-# Terms of Service — USPTO MCP (by BLEN)
+# Terms of Service — Patents & Trademarks MCP (by BLEN)
 
 _Last updated: 2026-11-12_
 
 ## 1. Acceptance and scope
 
-By accessing or using the BLEN-hosted **USPTO MCP**
+By accessing or using the BLEN-hosted **Patents & Trademarks MCP**
 at `https://uspto.mcp.blenlabs.com` (the "Service", operated by BLEN,
 Inc.), you agree to these terms. If you do not agree, do not use the Service.
 If you use it on behalf of an organization, you represent that you are
