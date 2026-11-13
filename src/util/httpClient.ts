@@ -81,6 +81,8 @@ export interface CallOptions {
   signal?: AbortSignal;
 }
 
+interface InflightEntry { promise: Promise<unknown>; controller: AbortController; waiters: number; forget?: () => void }
+
 interface Cached { status: number; body: unknown; size: number }
 
 export class HttpClient {
@@ -102,7 +104,7 @@ export class HttpClient {
    * Identical requests already on the wire; later callers share the first one's result. The shared
    * request is aborted only when every caller waiting on it has aborted.
    */
-  private readonly inflight = new Map<string, { promise: Promise<unknown>; controller: AbortController; waiters: number }>();
+  private readonly inflight = new Map<string, InflightEntry>();
   /** Credential values from defaultHeaders, scrubbed from every upstream body and error. */
   readonly #secrets: string[];
 
@@ -149,9 +151,11 @@ export class HttpClient {
     if (!entry) {
       const controller = new AbortController();
       const promise = this.fetchWithRetry<T>(url, method, o, payload, key, controller.signal);
-      entry = { promise, controller, waiters: 0 };
-      const created = entry;
-      promise.then(() => this.inflight.delete(key), () => this.inflight.delete(key));
+      const created: InflightEntry = { promise, controller, waiters: 0 };
+      const forget = () => { if (this.inflight.get(key) === created) this.inflight.delete(key); };
+      created.forget = forget;
+      entry = created;
+      promise.then(forget, forget);
       promise.catch(() => { /* each waiter observes the rejection itself */ });
       this.inflight.set(key, created);
     }
@@ -159,7 +163,7 @@ export class HttpClient {
   }
 
   /** One caller's view of a shared request: it may abort its own wait without failing others. */
-  private wait<T>(entry: { promise: Promise<unknown>; controller: AbortController; waiters: number }, signal?: AbortSignal): Promise<T> {
+  private wait<T>(entry: InflightEntry, signal?: AbortSignal): Promise<T> {
     entry.waiters++;
     if (!signal) return entry.promise.finally(() => { entry.waiters--; }) as Promise<T>;
     return new Promise<T>((resolve, reject) => {
@@ -167,7 +171,8 @@ export class HttpClient {
       const finish = () => { if (done) return false; done = true; entry.waiters--; signal.removeEventListener('abort', onAbort); return true; };
       const onAbort = () => {
         if (!finish()) return;
-        if (entry.waiters === 0) entry.controller.abort();
+        // Once nobody waits, the shared request is dying: later identical calls must start their own.
+        if (entry.waiters === 0) { entry.forget?.(); entry.controller.abort(); }
         reject(abortError());
       };
       signal.addEventListener('abort', onAbort, { once: true });
