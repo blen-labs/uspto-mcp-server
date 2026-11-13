@@ -1,7 +1,7 @@
 # Deploying to Railway
 
 The included `deploy/Dockerfile` and `deploy/railway.toml` produce a single-process
-HTTP MCP server on Node 24 with Deno 2.7.14 included. Authenticated HTTP serving runs
+HTTP MCP server on Node 26 (LTS) with Deno 2.9.8 included. Authenticated HTTP serving runs
 user code only in the Deno sandbox (a separate permissionless process per
 execution), so the image has everything `execute` needs.
 
@@ -132,9 +132,9 @@ sees a `401` with a `WWW-Authenticate` header pointing at your metadata URL.
 
 ## 7. Image notes
 
-- Both stages use `node:24-bookworm-slim`; `isolated-vm` 7 installs its prebuilt
+- Both stages use `node:26-trixie-slim` (Debian 13), pinned by digest; `isolated-vm` 7 installs its prebuilt
   binary, so there is no compiler toolchain. The Deno binary is copied from the
-  pinned `denoland/deno:bin-2.7.14` image.
+  `denoland/deno:bin-2.9.8` image, also pinned by digest. Dependabot proposes digest bumps.
 - The image runs as a non-root user and contains `LICENSE`, `NOTICE`, and the
   generated `dist/web/THIRD_PARTY_NOTICES.txt`. `.dockerignore` keeps `.env*`,
   `.git`, local state and tests out of the build context.

@@ -33,7 +33,7 @@ from `main` (see CONTRIBUTING.md, "Releasing").
   Origin checks, and a 1 MiB request cap.
 - Corpus with runnable examples verified against the live API, a field dictionary generated
   from live captures (no personal data), and a generated SDK reference.
-- Docker image (Node 24 + Deno), an MCPB bundle (manifest v0.4) that prompts for keys, and
+- Docker image (Node 26 LTS + Deno), an MCPB bundle (manifest v0.4) that prompts for keys, and
   third-party license notices in every artifact.
 
 [Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.1.0...HEAD
