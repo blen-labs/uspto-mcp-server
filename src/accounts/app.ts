@@ -13,6 +13,7 @@ import { log } from '../util/logger.js';
 import { IpRateLimiter, clientIp } from '../server/ipRateLimiter.js';
 import { originAllowed, bearerToken, MAX_REQUEST_BODY_BYTES } from '../server/http.js';
 import { ACCOUNT_MCP_PATH, PUBLIC_MCP_PATH } from './paths.js';
+import { DOCS_PATH, docsHandler } from './docs.js';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
@@ -172,6 +173,15 @@ export async function createAccountApp(
   });
   const webRoot = fileURLToPath(new URL('../../dist/web/', import.meta.url));
   app.use('/assets', express.static(resolve(webRoot, 'assets'), { immutable: true, maxAge: '1y', index: false }));
+  // The documentation site, when the image carries it (deploy/Dockerfile builds site/ into
+  // docs-site/, a sibling of dist/ that the npm package does not ship). Static and public, so it
+  // sits before the per-IP limiter like /assets, with its own CSP (see docs.ts).
+  const docs = docsHandler(fileURLToPath(new URL('../../docs-site/', import.meta.url)));
+  if (docs) {
+    // `/docs` without the slash would serve the index at the wrong base; send it to `/docs/`.
+    app.use(DOCS_PATH, (req, res, next) =>
+      req.originalUrl.split('?')[0] === DOCS_PATH ? res.redirect(301, `${DOCS_PATH}/`) : docs(req, res, next));
+  }
   // Production reads the built page once; development rereads it so `pnpm dev:web` rebuilds show.
   const loadIndex = () => readFile(resolve(webRoot, 'index.html'), 'utf8').catch(() => undefined);
   let indexHtml: string | undefined;
