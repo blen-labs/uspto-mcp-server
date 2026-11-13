@@ -1,0 +1,45 @@
+---
+title: Recipes
+description: Four programs that your assistant can run with execute, and tips for programs of your own.
+---
+
+import Example from '../../components/Example.astro';
+
+Each program runs as written in `execute`. They are plain JavaScript with top-level `await` and
+`return`, and the repository tests each one.
+
+## An applicant's recent patents
+
+`odp.patents.search` with `q`, `filters`, `rangeFilters`, `sort`, `fields`, and `facets`.
+
+<Example file="patent-portfolio.js" />
+
+## PTAB challenges against a patent
+
+Every trial filed against one patent, then the decisions in the first trial.
+
+<Example file="ptab-challenges.js" />
+
+## Prosecution history
+
+From a patent number to its application, then its office actions and rejection grounds.
+
+<Example file="prosecution-history.js" />
+
+## Trademark status
+
+The status of several trademark cases in one request.
+
+<Example file="trademark-status.js" />
+
+## Tips
+
+- **Filter first.** USPTO serves one request at a time for each key, so calls queue. One
+  well-filtered search is better than many lookups.
+- **Pass `fields` on every search.** Full patent and PTAB records are large.
+- **Start with a small `limit`**, 5 to 25. `count` gives the total.
+- **Use `facets`** to get counts without a page through the records.
+- **Return less.** A returned value over 256 KiB fails with `ResultTooLarge`.
+- **No matches is not an error.** A search with no matches returns `{ count: 0, …Bag: [] }`.
+
+The [SDK reference](/reference/sdk/) lists every method.

@@ -1,0 +1,65 @@
+---
+title: Self-host
+description: Run the server's HTTP transport for yourself or for other people, and where the full guides are.
+---
+
+Remote clients such as ChatGPT, Claude custom connectors, and Gemini Enterprise need an HTTPS
+endpoint. The server has a Streamable HTTP transport for that. Pick the mode by who uses it.
+
+| Mode | Who it serves | Whose keys | How to start it |
+| --- | --- | --- | --- |
+| Local | You, on your computer | Yours | `--http --insecure` |
+| Single owner | You, from anywhere | Yours | `--http` with an OIDC provider |
+| Accounts | Many people | Each person's own | `--http` with `USPTO_AUTH_PROVIDER=accounts` |
+
+USPTO keys are personal. The single-owner mode answers every token holder with the server's own
+keys, so use it only for yourself. To host for other people, use account mode.
+
+## Local
+
+```bash
+USPTO_API_KEY=... npx @blen/uspto-mcp-server --http --insecure --port 8080
+```
+
+There is no sign-in. The server binds to `127.0.0.1` unless `HOST` or `--host` names another address.
+
+## Single owner
+
+```bash
+USPTO_API_KEY=... \
+USPTO_AUTH_PROVIDER=clerk \
+USPTO_AUTH_ISSUER=https://<tenant>.clerk.accounts.dev \
+USPTO_AUTH_AUDIENCE=https://your-host.example.com/mcp \
+USPTO_AUTH_JWKS_URL=https://<tenant>.clerk.accounts.dev/.well-known/jwks.json \
+USPTO_PUBLIC_ORIGIN=https://your-host.example.com \
+  npx @blen/uspto-mcp-server --http
+```
+
+The issuer, the audience, and an HTTPS JWKS URL are all required. The provider can be `clerk`,
+`workos`, `auth0`, or `generic-oidc`. Then give your client the URL
+`https://your-host.example.com/mcp`.
+
+## Accounts
+
+Account mode adds Google sign-in, an account page where each person saves their own keys, and
+OAuth for MCP clients. The keys are encrypted in PostgreSQL. See the
+[account mode guide](https://github.com/blen-labs/uspto-mcp-server/blob/main/docs/accounts.md).
+
+## Rules for every deployment
+
+- **Run one replica.** The queue for each key is in memory. Two instances that share a key look
+  like concurrent clients to USPTO.
+- **Sign-in is required.** `--http` refuses to start without `--insecure` or a configured provider.
+- **Install Deno.** With sign-in, the server runs each program in a separate Deno process, and
+  `execute` is unavailable without it.
+- **Name your host.** To listen on an address that is not loopback, set `USPTO_PUBLIC_ORIGIN` or
+  `USPTO_ALLOWED_HOSTS`.
+
+## Full guides
+
+These documents are in the repository:
+
+- [Architecture](https://github.com/blen-labs/uspto-mcp-server/blob/main/docs/architecture.md)
+- [Account mode](https://github.com/blen-labs/uspto-mcp-server/blob/main/docs/accounts.md)
+- [Railway walkthrough](https://github.com/blen-labs/uspto-mcp-server/blob/main/deploy/RAILWAY.md)
+- [Every setting](https://github.com/blen-labs/uspto-mcp-server/blob/main/.env.example)

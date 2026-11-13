@@ -19,6 +19,21 @@ COPY web ./web
 COPY legal ./legal
 RUN pnpm build && pnpm prune --prod
 
+# ---- Docs: the documentation site (site/, Astro Starlight), served at /docs --------------
+# Its own pnpm root and lockfile. The build reads docs/sdk-reference.md and examples/*.js, and
+# its link check reads package.json and release.yml.
+FROM node:26-trixie-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc AS docs
+WORKDIR /repo
+RUN npm install -g --ignore-scripts pnpm@10.33.0
+COPY site/package.json site/pnpm-lock.yaml site/pnpm-workspace.yaml ./site/
+RUN cd site && pnpm install --frozen-lockfile
+COPY site ./site
+COPY docs/sdk-reference.md ./docs/
+COPY examples ./examples
+COPY package.json ./
+COPY .github/workflows/release.yml ./.github/workflows/
+RUN cd site && pnpm build
+
 # ---- Deno: the process-isolated sandbox used for multi-user HTTP serving -----
 FROM denoland/deno:bin-2.9.8@sha256:b507583d3c68ba69f3ed2ce5969ae5b8b70f43421c781279c7aea06435263543 AS deno
 
@@ -43,6 +58,7 @@ COPY --from=builder /app/package.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/schema ./schema
+COPY --from=docs /repo/site/dist ./docs-site
 COPY LICENSE NOTICE ./
 
 USER app

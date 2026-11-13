@@ -1,0 +1,57 @@
+---
+title: How it works
+description: The three tools, the sandbox that runs your assistant's code, and how the server stays inside USPTO's limits.
+---
+
+import Example from '../../components/Example.astro';
+import FlowDiagram from '../../components/FlowDiagram.astro';
+
+The server gives your assistant a small JavaScript SDK in place of dozens of narrow tools. The
+assistant writes the exact query it needs, and the server runs that code in a sandbox.
+
+<FlowDiagram />
+
+## Three tools
+
+The assistant uses them in this order.
+
+| Tool | What it does |
+| --- | --- |
+| `search_api` | Searches the SDK method documentation and a dictionary of response fields. Returns signatures and ready-to-run examples. |
+| `describe_schema` | Looks up one entry, such as `odp.patents.search`, or lists a namespace, such as `odp.ptab.`. |
+| `execute` | Runs JavaScript in the sandbox, with `odp` and `tsdr` as globals. |
+
+All three are read-only. [Tools](/reference/tools/) has their inputs and limits.
+
+## What the assistant writes
+
+For "Has anyone challenged patent 10,169,987 at the PTAB?", the assistant can run a program like
+this one:
+
+<Example file="ptab-challenges.js" />
+
+It then answers in plain English, and names the trials and decisions that it found.
+
+## The sandbox
+
+- The program has no network, file system, environment, or subprocess access.
+- The only way out is the `odp` and `tsdr` SDK. Each call goes to the server process, which adds
+  your key and calls USPTO.
+- Each run has a time limit, 30 seconds by default, and size limits for code, results, and logs.
+
+[Security](/security/) has more.
+
+## USPTO's limits
+
+USPTO allows one request in flight for each API key, 4 to 15 requests each second, and a weekly
+quota. It asks clients to wait at least 5 seconds after a `429` response. So the server:
+
+- Sends one call at a time for each key. By default it starts at most 4 each second for ODP and
+  1 for TSDR.
+- Pauses a key for at least 5 seconds after a `429`, then retries that call once if the pause is
+  30 seconds or less.
+- Caps the USPTO calls in one `execute` run, by default at 50 for ODP and 25 for TSDR.
+- Caches responses, for 10 minutes by default, so a repeated question does not spend quota.
+
+`Promise.all` in a program is not faster: the calls still go out one at a time. A program can
+have at most 16 calls pending at once.

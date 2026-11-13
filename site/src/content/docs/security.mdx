@@ -1,0 +1,36 @@
+---
+title: Security
+description: What the sandbox allows, where keys live, and how to report a vulnerability.
+---
+
+The server runs code that a model wrote, and it treats that code as untrusted.
+
+## The sandbox
+
+- **No access to your computer.** A program has no network, file system, environment, or
+  subprocess access.
+- **A check before the run.** The server parses each program and rejects imports, `eval`, and
+  references to host globals.
+- **An isolated runtime.** The program runs in a fresh V8 isolate, or in a separate Deno process
+  with no permissions. With sign-in, the server uses the Deno process only.
+- **A deadline that the server owns.** The server stops a run that passes its time limit.
+- **One way out.** A program reaches USPTO only through the registered read methods of the `odp`
+  and `tsdr` SDK.
+
+## Keys
+
+- Keys stay in the server process. The server never passes them into the sandbox.
+- If USPTO echoes a key back, the server replaces it with `[REDACTED]` in results and errors.
+- In account mode, one person's key never serves another person's calls.
+
+## What the server does not do
+
+- It does not change anything at USPTO. All three tools are read-only.
+- It does not download document PDFs or bulk files. The SDK returns their URLs.
+
+## Report a vulnerability
+
+Do not open a public issue. Open a
+[private security advisory](https://github.com/blen-labs/uspto-mcp-server/security/advisories/new).
+The full policy and the threat model are in
+[SECURITY.md](https://github.com/blen-labs/uspto-mcp-server/blob/main/SECURITY.md).

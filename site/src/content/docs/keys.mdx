@@ -1,0 +1,53 @@
+---
+title: Get your keys
+description: The two free USPTO keys the server uses, where to get each one, and how to keep a key active.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+The server calls USPTO with your own keys. Both are free. USPTO issues a key to one person, so do
+not share yours.
+
+| Key | What it unlocks | Where to get it | Setting |
+| --- | --- | --- | --- |
+| Open Data Portal (ODP) key | Patents, PTAB, petition decisions, office actions, bulk dataset catalog | [data.uspto.gov/myodp](https://data.uspto.gov/myodp), **Manage API Key** | `USPTO_API_KEY` |
+| TSDR key | Trademark status and documents | [USPTO API Key Manager](https://account.uspto.gov/api-manager) | `USPTO_TSDR_API_KEY` |
+
+- The two keys are separate. The ODP key does not work on TSDR.
+- With one key only, the other source is off. Its calls return `SourceUnavailable` with
+  instructions, and the rest still works.
+
+## Get the ODP key
+
+<Steps>
+
+1. Sign in to your USPTO.gov account, or create one, and turn on multi-factor authentication.
+2. Link the account to a verified ID.me identity. You do this once.
+3. Sign in at [data.uspto.gov/myodp](https://data.uspto.gov/myodp) and select **Manage API Key**.
+
+</Steps>
+
+USPTO describes each step in
+[Register for ODP access](https://data.uspto.gov/support/universal-registration).
+
+## Get the TSDR key
+
+Get it in the [USPTO API Key Manager](https://account.uspto.gov/api-manager). You need it only for
+trademark questions.
+
+## Keep a key working
+
+- **Use it.** USPTO's [Getting Started](https://data.uspto.gov/apis/getting-started) page says a
+  key "shouldn't expire if it is used at least one time per year". The same page says an ODP key
+  that stays unused for 90 days is deleted. One call every 90 days satisfies both.
+- **Keep it private.** USPTO says: "Do not share it with others. It is an identifier unique to
+  you."
+- **Check your profile if every call returns `403`.** USPTO may have deactivated the key. Complete
+  the Open Data Portal fields in your USPTO.gov account settings, then select **Activate API Key**
+  on the Manage API Key page.
+
+## Where the key goes
+
+You give the keys to the server when you [connect your assistant](/connect/). They stay in the
+server process on your computer. They never enter the sandbox, and the server removes a key from
+results and errors.

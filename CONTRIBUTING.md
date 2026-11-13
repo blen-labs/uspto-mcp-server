@@ -59,6 +59,22 @@ own `USPTO_API_KEY` / `USPTO_TSDR_API_KEY` (keep them in a gitignored `.env`; th
 live suite is read-only, sequential and small, and never runs in PR CI). Never
 commit keys.
 
+The documentation site is in `site/` (Astro Starlight). The Docker image builds it and the
+hosted server serves it at `/docs` (`src/accounts/docs.ts`), so it deploys with the server;
+the CI Docker job builds it on every pull request. It is its own pnpm root with its own
+lockfile, so the server's install and audit never see its packages:
+
+```bash
+cd site
+pnpm install
+pnpm dev      # local preview
+pnpm build    # builds, validates the internal links, and checks the connect buttons
+pnpm og       # renders public/og.png, the picture shown with a shared link
+```
+
+Its SDK reference page is `docs/sdk-reference.md`, copied in at build time, and its
+recipes are the files in `examples/`. Edit those sources, not the site.
+
 The HTTP integration test (`test/http-integration.spec.ts`) exercises a real
 `http.Server` against the v2 SDK's `createMcpHandler`/`toNodeHandler` over `fetch`,
 covering both the stateless `2026-07-28` leg and the legacy `initialize` fallback,
@@ -114,7 +130,8 @@ Releases are **continuous** (`.github/workflows/release.yml`): every push to
    `src/sdk/bindings.ts`, and prepends the CHANGELOG section (logic in
    `scripts/release-lib.mjs`, covered by `test/release.spec.ts`); it builds, packs
    the tarball, pushes a `chore(release): vX.Y.Z` commit with the annotated tag,
-   and creates the GitHub Release with the tarball attached. `main` requires PRs,
+   and creates the GitHub Release with the tarball and the Claude Desktop bundle
+   (`uspto-mcp-server.mcpb`, which the documentation site's download button links to) attached. `main` requires PRs,
    so the release commit is pushed as the org's release GitHub App, the ruleset's
    only bypass actor (contents: write on this repository only). Its key is the
    `RELEASE_APP_PRIVATE_KEY` secret and its client ID the `RELEASE_APP_CLIENT_ID`

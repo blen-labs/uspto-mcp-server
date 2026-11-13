@@ -49,6 +49,9 @@ jobs:
           deno-version: v2.9.8
       - run: pnpm install --frozen-lockfile
       - run: pnpm audit --audit-level moderate
+      # The documentation site (site/) has its own lockfile; the Docker job builds it.
+      - run: pnpm audit --audit-level moderate
+        working-directory: site
       - run: pnpm typecheck
       - run: pnpm lint
       # Build before testing: the account frontend test serves the built dist/web bundle.

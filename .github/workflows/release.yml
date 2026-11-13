@@ -8,8 +8,9 @@ name: release
 #
 # Least privilege, three jobs:
 #   gates   - read-only: the full CI workflow (tests incl. Postgres + both sandboxes, Docker, MCPB).
-#   cut     - contents: write. Installs with --ignore-scripts, stamps, builds, packs the tarball,
-#             pushes the chore(release) commit + tag, creates the GitHub Release.
+#   cut     - contents: write. Installs with --ignore-scripts, stamps, builds, packs the tarball
+#             and the Claude Desktop bundle, pushes the chore(release) commit + tag, creates the
+#             GitHub Release with both attached.
 #   publish - id-token: write only. Never checks out or installs dependencies: it STAGES the
 #             exact tarball `cut` built, via npm trusted publishing (OIDC). No npm token exists.
 #             Nothing goes live until a maintainer approves the staged version with 2FA
@@ -82,6 +83,11 @@ jobs:
           name: npm-tarball
           path: blen-uspto-mcp-server-*.tgz
           if-no-files-found: error
+      # From the same stamped build as the tarball, so the bundle carries the released version.
+      # mcpb:prepare installs the bundle's production dependencies with --ignore-scripts.
+      - name: Build the Claude Desktop bundle
+        if: steps.cut.outputs.released == 'true'
+        run: pnpm mcpb:prepare && pnpm mcpb:pack && test -s uspto-mcp-server.mcpb
       - name: Mint a short-lived token for the release push
         id: app-token
         if: steps.cut.outputs.released == 'true'
@@ -114,7 +120,7 @@ jobs:
           echo "::add-mask::${auth}" # the base64 form is not covered by the token's own mask
           git -c core.hooksPath=/dev/null -c http.https://github.com/.extraheader="AUTHORIZATION: basic ${auth}" \
             push "https://github.com/${REPO}.git" HEAD:main --follow-tags
-          gh release create "v${VERSION}" --title "v${VERSION}" --notes-file "${NOTES_FILE}" blen-uspto-mcp-server-*.tgz
+          gh release create "v${VERSION}" --title "v${VERSION}" --notes-file "${NOTES_FILE}" blen-uspto-mcp-server-*.tgz uspto-mcp-server.mcpb
 
   publish:
     needs: cut
