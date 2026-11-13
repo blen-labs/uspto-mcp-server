@@ -59,8 +59,15 @@ Add the server to `~/.gemini/settings.json`, or to `.gemini/settings.json` in on
 ## ChatGPT and other remote clients
 
 ChatGPT, Claude custom connectors, and Gemini Enterprise connect to a remote server over HTTPS. They
-do not start a server on your computer. To use them, run the server's HTTP transport on a host that
-you control: see [Self-host](/self-host/).
+do not start a server on your computer.
+
+BLEN hosts one at `https://uspto.mcp.blenlabs.com/mcp/account`. Add that URL as a custom connector
+and sign in with Google when your client asks. Then save your own ODP key, and your TSDR key if you
+have one, on the [account page](https://uspto.mcp.blenlabs.com/account). Each key is stored
+encrypted and used only for your requests. Without signing in, `https://uspto.mcp.blenlabs.com/mcp`
+offers the search and schema tools but cannot run code.
+
+To run your own instance instead, see [Self-host](/self-host/).
 
 ## Check that it works
 
