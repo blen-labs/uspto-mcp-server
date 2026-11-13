@@ -1,0 +1,24 @@
+# Railway service config. Reference this file from your Railway project Settings.
+# https://docs.railway.com/guides/config-as-code
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "deploy/Dockerfile"
+
+[deploy]
+startCommand = "node dist/bin.js --http"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+# One instance: USPTO allows one request in flight per API key and the per-key gates, quotas and
+# caches are in-process, so a second replica would let one key send concurrent requests (HTTP 429).
+# Railway activates a new deployment before it sends SIGTERM to the old one, so deploys overlap
+# briefly however this is set; 0 keeps that as short as possible. On SIGTERM the server cancels
+# running executions and in-flight USPTO calls at once; a 429 in the overlap pauses the key
+# (>= 5 s) and is retried once. 15 s of draining is ample before SIGKILL.
+numReplicas = 1
+overlapSeconds = 0
+drainingSeconds = 15
+# Railway routes the public URL to the port your service listens on (the PORT env
+# var it injects). Our bin reads PORT and defaults to 8080.
