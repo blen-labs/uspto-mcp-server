@@ -7,7 +7,7 @@ FROM node:24-bookworm-slim AS builder
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs ./
 RUN pnpm install --frozen-lockfile
 
 COPY tsconfig*.json ./
