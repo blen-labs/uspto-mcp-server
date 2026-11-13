@@ -118,17 +118,22 @@ Releases are **continuous** (`.github/workflows/release.yml`): every push to
    pushed with `GITHUB_TOKEN`, which GitHub never triggers workflows for — no
    release loop.
 3. The `publish` job — holding only `id-token: write`, in the `npm` environment
-   (add required reviewers there to approve each publish) — downloads that exact
-   tarball and publishes it. It never checks out the repository or installs
-   dependencies.
+   (deployments allowed from `main` only) — downloads that exact tarball and
+   **stages** it with `npm stage publish`. It never checks out the repository or
+   installs dependencies. The version goes live only when a maintainer approves it
+   with 2FA: npmjs.com → Staged Packages, or `npm stage approve <stage-id>`
+   (`npm stage list @blen/uspto-mcp-server` shows pending versions). Check the
+   staged tarball against the GitHub Release asset's sha256 before approving
+   (`npm stage download <stage-id>`).
 4. **Recovery**: `gh workflow run release.yml --ref main -f republish=true`
-   re-runs the gates and republishes the *current* version to npm (no bump,
+   re-runs the gates and stages the *current* version on npm again (no bump,
    no tag) — for when a publish failed after a tag already existed.
 
 Publishing is **tokenless** via [npm Trusted
 Publishing](https://docs.npmjs.com/trusted-publishers) (OIDC): the npm
 package settings register this repo's `release.yml` (and the `npm` environment) as
-a trusted publisher, so no npm token or secret exists anywhere; the job's
+a trusted publisher allowed only `npm stage publish`, so no npm token or secret
+exists anywhere and CI alone can never make a version live; the job's
 `id-token: write` permission is what authenticates, and provenance is generated
 automatically. Workflow actions are pinned to commit SHAs; Dependabot
 (`.github/dependabot.yml`) proposes updates for npm packages, actions and the
@@ -143,10 +148,10 @@ Breaking changes additionally need a migration note in `docs/`.
 **First release.** This package starts at `0.1.0`. With no tags in the repository,
 `scripts/release.mjs` releases the version `package.json` already declares, using
 its hand-written `CHANGELOG.md` section (no bump, no release commit), and tags it.
-Before the first push to `main`: create the `npm` environment in the GitHub
-repository settings, and register this repository's `release.yml` as a trusted
-publisher in the npm settings for `@blen/uspto-mcp-server`, or the publish step
-fails.
+npm only offers trusted-publisher settings for a package that exists, so the very
+first version was staged once by a maintainer from the GitHub Release tarball
+(`npm stage publish <tgz> --access public`, then approved with 2FA); after that,
+the trusted publisher (stage only, environment `npm`) took over.
 
 ## Reporting security issues
 
