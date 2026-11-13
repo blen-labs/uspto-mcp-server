@@ -5,13 +5,15 @@
 
 const BANG_SUBJECT = /^[a-z]+(\([^)]*\))?!:/;
 const FEAT_SUBJECT = /^feat(\([^)]*\))?!?:/;
+// Conventional Commits: a footer line `BREAKING CHANGE: ...` (or `BREAKING-CHANGE:`), not any mention.
+const BREAKING_FOOTER = /^BREAKING[ -]CHANGE(\([^)]*\))?: /m;
 const FIX_SUBJECT = /^fix(\([^)]*\))?!?:/;
 
 /** @param {{subject: string, body?: string}[]} commits */
 export function computeBump(commits) {
   let bump = 'patch';
   for (const { subject, body = '' } of commits) {
-    if (BANG_SUBJECT.test(subject) || /BREAKING CHANGE/.test(body)) return 'major';
+    if (BANG_SUBJECT.test(subject) || BREAKING_FOOTER.test(body)) return 'major';
     if (FEAT_SUBJECT.test(subject)) bump = 'minor';
   }
   return bump;
@@ -41,7 +43,7 @@ export function renderChangelogSection(version, date, commits) {
   const changed = [];
   for (const commit of commits) {
     const { subject, body = '' } = commit;
-    const isBreaking = BANG_SUBJECT.test(subject) || /BREAKING CHANGE/.test(body);
+    const isBreaking = BANG_SUBJECT.test(subject) || BREAKING_FOOTER.test(body);
     if (isBreaking) breaking.push(subjectText(subject));
     if (FEAT_SUBJECT.test(subject)) added.push(subjectText(subject));
     else if (FIX_SUBJECT.test(subject)) fixed.push(subjectText(subject));
