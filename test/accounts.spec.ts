@@ -575,6 +575,28 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     expect((await mcp(a.access_token)).status).toBe(401);
     await (await service.auth.$context).adapter.update({ model: 'user', where: [{ field: 'id', value: alice.id }], update: { emailVerified: true } });
   });
+  it('rotates stored keys past a row it cannot open, batch by batch', async () => {
+    const k1 = randomBytes(32), k2 = randomBytes(32);
+    const before = new Store(pool, new Keyring('k1', { k1 }));
+    const owners = ['rot:a', 'rot:b', 'rot:c'];
+    for (const owner of owners) await before.saveKey(owner, 'odp', `key-${owner}`, owner);
+    // The first row in key order points at a key that is no longer in the keyring; another lost its key ID.
+    await pool.query("UPDATE credentials SET ciphertext=jsonb_set(ciphertext,'{kid}','\"gone\"') WHERE owner='rot:a'");
+    await before.saveKey('rot:d', 'odp', 'key-rot:d', 'rot:d');
+    await pool.query("UPDATE credentials SET ciphertext=ciphertext - 'kid' WHERE owner='rot:d'");
+    const after = new Store(pool, new Keyring('k2', { k1, k2 }));
+    // Batches of one exercise the cursor; other tests' rows (another key) are skipped the same way.
+    const { rotated, failed } = await after.rotateAllKeys(1);
+    expect(failed).toContainEqual({ owner: 'rot:a', kind: 'odp' });
+    expect(failed).toContainEqual({ owner: 'rot:d', kind: 'odp' });
+    expect(rotated).toBe(2);
+    for (const owner of ['rot:b', 'rot:c']) expect(await after.getKey(owner, 'odp')).toBe(`key-${owner}`);
+    const kids = await pool.query("SELECT owner, ciphertext->>'kid' AS kid FROM credentials WHERE owner LIKE 'rot:%' ORDER BY owner");
+    expect(kids.rows).toEqual([{ owner: 'rot:a', kid: 'gone' }, { owner: 'rot:b', kid: 'k2' }, { owner: 'rot:c', kid: 'k2' }, { owner: 'rot:d', kid: null }]);
+    const audit = await pool.query("SELECT action FROM audit_events WHERE tenant='rot:a' AND action='credential.reencrypt_failed'");
+    expect(audit.rowCount).toBe(1);
+    expect(await after.rotateAllKeys(1)).toMatchObject({ rotated: 0 });
+  });
   it('rotates refresh tokens and honors access token revocation', async () => {
     const a = await token();
     const response = await exchange(a.clientId, { grant_type: 'refresh_token', refresh_token: a.refresh_token });
