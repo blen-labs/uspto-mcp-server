@@ -1,0 +1,62 @@
+---
+title: Tools
+description: Inputs, results, and limits of search_api, describe_schema, and execute.
+---
+
+The server has three tools. All three are read-only. Each result is compact JSON text, with the
+same object as structured content.
+
+## search_api
+
+Searches the SDK method documentation and the response-field dictionary.
+
+| Input | Type | Notes |
+| --- | --- | --- |
+| `query` | string | What you want to do, in plain words. |
+| `k` | integer, 1 to 50 | The number of results. The default is 10. |
+
+It returns `{ hits, note }`. Each hit has an `id`, a `description`, and a `score`. A hit for a
+method also has its `signature` and a ready-to-run `example`.
+
+## describe_schema
+
+Looks up entries by name. Give exactly one of the two inputs.
+
+| Input | Type | Notes |
+| --- | --- | --- |
+| `path` | string | One exact entry, for example `odp.patents.search`. |
+| `prefix` | string | Every entry in a namespace, for example `odp.ptab.`. |
+
+It returns `{ found: true, entries }`, or `{ found: false, message }` when nothing matches.
+
+## execute
+
+Runs JavaScript in the sandbox, with `odp` and `tsdr` as globals.
+
+| Input | Type | Notes |
+| --- | --- | --- |
+| `code` | string | Plain JavaScript. Type annotations are rejected. Top-level `await` and `return` work. |
+| `timeoutMs` | integer, 100 to 120,000 | The time limit of the run. The default is 30,000. |
+| `memoryMb` | integer, 16 to 256 | The memory limit of the run. The default is 64. |
+
+A run that succeeds returns `{ ok: true, value, logs, durationMs }`, where `value` is what the
+program returned.
+
+A run that fails returns `{ ok: false, error: { name, message, status? }, logs, durationMs }` and
+is marked as an error, so the assistant sees what went wrong. The
+[SDK reference](/reference/sdk/#errors) lists the error names.
+
+### Limits of one run
+
+| What | Default limit | Past the limit |
+| --- | --- | --- |
+| Code | 256 KiB | The call is refused, with an argument error or `CodeTooLarge`. |
+| Returned value | 256 KiB | `ResultTooLarge` |
+| Logs | 64 KiB or 1,000 lines | No error. The logs are cut. |
+| Arguments of one SDK call | 64 KiB | `ArgumentsTooLarge` |
+| SDK calls pending at once | 16 | `TooManyPendingCalls` |
+| USPTO calls | 50 for `odp`, 25 for `tsdr` | `CallBudgetExceeded` |
+| One USPTO response | 8 MiB | `ResponseTooLarge` |
+
+A self-hosted server can change the last two limits. See
+[every setting](https://github.com/blen-labs/uspto-mcp-server/blob/main/.env.example).

@@ -8,6 +8,8 @@
 
 **Ask your AI assistant real questions about U.S. patents and trademarks — and get answers grounded in the official USPTO APIs.**
 
+**Documentation:** [blen-labs.github.io/uspto-mcp-server](https://blen-labs.github.io/uspto-mcp-server/) has connect buttons for Claude Desktop, Cursor and VS Code, key setup, recipes, and the SDK reference.
+
 This is a [Model Context Protocol](https://modelcontextprotocol.io) server that connects any MCP client (Claude Desktop and others) to the U.S. Patent and Trademark Office's public APIs:
 
 - **[USPTO Open Data Portal (ODP)](https://data.uspto.gov)** — `api.uspto.gov`: the Patent File Wrapper (bibliographic data, status, continuity, assignments, patent term adjustment, attorneys, transactions, document lists), PTAB trials, appeals and interferences, petition decisions, office actions (full text, rejections, citations), and the bulk-dataset catalog. `developer.uspto.gov` now redirects here.

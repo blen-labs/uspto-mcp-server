@@ -124,4 +124,4 @@ stdio | Streamable HTTP (+OAuth, Host/Origin, per-IP bucket, quotas) | accounts 
 
 ## Docs
 
-`docs/architecture.md` (layered design, sandbox, guardrails and rate-limit rationale), `docs/sdk-reference.md` (search syntax, identifiers, errors, and the generated `odp`/`tsdr` method reference), and `docs/accounts.md` (account mode, portal API, key storage) are the deep references.
+`docs/architecture.md` (layered design, sandbox, guardrails and rate-limit rationale), `docs/sdk-reference.md` (search syntax, identifiers, errors, and the generated `odp`/`tsdr` method reference), and `docs/accounts.md` (account mode, portal API, key storage) are the deep references. `site/` is the public documentation site (Astro Starlight on GitHub Pages; its own pnpm root and lockfile; `cd site && pnpm build`). Its SDK reference page is `docs/sdk-reference.md` copied in at build time and its recipes read `examples/*.js`, so edit those sources; `site/scripts/check-links.mjs` decodes the connect deep links from the built pages and fails the build when one no longer matches what its client reads.

@@ -1,0 +1,108 @@
+---
+title: Overview
+description: Ask your AI assistant questions about U.S. patents and trademarks, answered from the official USPTO APIs.
+template: splash
+hero:
+  title: Patents & Trademarks MCP
+  tagline: Ask your AI assistant real questions about U.S. patents and trademarks. The answers come from the official USPTO APIs.
+  actions:
+    - text: Connect your assistant
+      link: /uspto-mcp-server/connect/
+      icon: right-arrow
+    - text: Get your keys
+      link: /uspto-mcp-server/keys/
+      variant: secondary
+    - text: View on GitHub
+      link: https://github.com/blen-labs/uspto-mcp-server
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkButton, LinkCard, Steps } from '@astrojs/starlight/components';
+import { bundleUrl, cursorLink, vscodeLink } from '../../lib/install';
+
+## Connect in one step
+
+Each button starts the server on your computer. It needs your free [USPTO keys](/keys/).
+
+<CardGrid>
+  <LinkCard
+    title="Claude Desktop"
+    description="Download the extension. Open the file, and Claude asks for your keys."
+    href={bundleUrl}
+  />
+  <LinkCard title="Cursor" description="Add to Cursor. Cursor opens with the server filled in." href={cursorLink} />
+  <LinkCard title="VS Code" description="Add to VS Code. VS Code shows the server for review." href={vscodeLink} />
+  <LinkCard
+    title="Other clients"
+    description="Claude Code, Gemini CLI, ChatGPT, and manual setup."
+    href="/connect/"
+  />
+</CardGrid>
+
+## Ask in plain language
+
+- "Which IPRs have been filed against patent 10,169,987, and how did they end?"
+- "Show the office actions and rejection grounds for application 17/248,024."
+- "What's the status of trademark serial number 97123456?"
+
+## What it covers
+
+<CardGrid>
+  <Card title="Patents" icon="document">
+    Search applications and grants by title, applicant, inventor, CPC class, dates, or status. Read
+    one application's continuity, assignments, term adjustment, transactions, and documents.
+  </Card>
+  <Card title="PTAB" icon="open-book">
+    Trials (IPR, PGR, CBM, DER), decisions, papers, ex parte appeals, and interferences.
+  </Card>
+  <Card title="Office actions" icon="pencil">
+    Full text, rejection grounds, and citations.
+  </Card>
+  <Card title="Petition decisions" icon="approve-check">
+    Decisions with their documents.
+  </Card>
+  <Card title="Trademarks" icon="star">
+    Status for 1 to 25 cases in one call, and the document list of a case.
+  </Card>
+  <Card title="Bulk datasets" icon="list-format">
+    The catalog and its file lists.
+  </Card>
+</CardGrid>
+
+## How it works
+
+<Steps>
+
+1. **Find the call.** `search_api` searches the SDK documentation for the methods that fit the
+   question.
+2. **Read its shape.** `describe_schema` returns a method's signature and a ready-to-run example.
+3. **Run a program.** Your assistant writes a short JavaScript program, and `execute` runs it in
+   a sandbox with no network, file, or environment access.
+
+</Steps>
+
+Your keys stay in the server process and never enter the sandbox. The server sends one request at
+a time for each key, as USPTO requires.
+
+<LinkButton href="/how-it-works/" variant="secondary" icon="right-arrow">How it works</LinkButton>
+
+## Made for assistants too
+
+<CardGrid>
+  <Card title="One file for the site" icon="document">
+    [llms.txt](/llms.txt) lists every page. [llms-full.txt](/llms-full.txt) is the whole site in one
+    file.
+  </Card>
+  <Card title="Markdown for every page" icon="pencil">
+    **Copy page** at the top of a page copies it as Markdown, ready to paste.
+  </Card>
+  <Card title="Ask about a page" icon="comment">
+    The **Open** menu sends a page to ChatGPT or Claude.
+  </Card>
+</CardGrid>
+
+---
+
+Open source under Apache-2.0. This is an independent project. It calls public USPTO APIs and is
+not affiliated with or endorsed by the USPTO or the U.S. government.

@@ -59,6 +59,21 @@ own `USPTO_API_KEY` / `USPTO_TSDR_API_KEY` (keep them in a gitignored `.env`; th
 live suite is read-only, sequential and small, and never runs in PR CI). Never
 commit keys.
 
+The documentation site is in `site/` (Astro Starlight, published to GitHub Pages by
+`.github/workflows/docs.yml`). It is its own pnpm root with its own lockfile, so the
+server's install and audit never see its packages:
+
+```bash
+cd site
+pnpm install
+pnpm dev      # local preview
+pnpm build    # builds, validates the internal links, and checks the connect buttons
+pnpm og       # renders public/og.png, the picture shown with a shared link
+```
+
+Its SDK reference page is `docs/sdk-reference.md`, copied in at build time, and its
+recipes are the files in `examples/`. Edit those sources, not the site.
+
 The HTTP integration test (`test/http-integration.spec.ts`) exercises a real
 `http.Server` against the v2 SDK's `createMcpHandler`/`toNodeHandler` over `fetch`,
 covering both the stateless `2026-07-28` leg and the legacy `initialize` fallback,
