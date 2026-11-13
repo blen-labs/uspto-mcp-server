@@ -81,6 +81,11 @@ function main() {
   cpSync(resolve(root, 'package.json'), resolve(out, 'package.json'));
   // Reproducible: the bundle installs exactly the tested lockfile.
   cpSync(resolve(root, 'pnpm-lock.yaml'), resolve(out, 'pnpm-lock.yaml'));
+  // The bundle's own workspace root: carries the dependency overrides the lockfile was resolved
+  // with (a frozen install refuses a mismatch), and stops pnpm from walking up to the repo root.
+  cpSync(resolve(root, 'pnpm-workspace.yaml'), resolve(out, 'pnpm-workspace.yaml'));
+  // Keeps better-auth's optional peers (vitest, react) out of the production graph.
+  cpSync(resolve(root, '.pnpmfile.cjs'), resolve(out, '.pnpmfile.cjs'));
   for (const f of ['LICENSE', 'NOTICE']) cpSync(resolve(root, f), resolve(out, f));
   if (existsSync(resolve(root, 'README.md'))) {
     cpSync(resolve(root, 'README.md'), resolve(out, 'README.md'));
@@ -95,12 +100,11 @@ function main() {
   // isolated-vm loads its shipped prebuilt binary at runtime (Node 24/26 on the
   // common platforms); elsewhere execute falls back to Deno or reports
   // SandboxUnavailable with instructions.
-  // --ignore-workspace is load-bearing: without it, pnpm walks up to the repo's
-  // pnpm-workspace.yaml and installs (and --prod-prunes!) the ROOT node_modules
-  // instead of the bundle's.
+  // The copied pnpm-workspace.yaml makes mcpb-build/ its own workspace root, so this
+  // installs (and --prod-prunes) the bundle's node_modules, never the repo root's.
   execFileSync(
     'pnpm',
-    ['install', '--prod', '--frozen-lockfile', '--ignore-scripts', '--ignore-workspace', '--config.node-linker=hoisted'],
+    ['install', '--prod', '--frozen-lockfile', '--ignore-scripts', '--config.node-linker=hoisted'],
     { cwd: out, stdio: 'inherit' },
   );
 
