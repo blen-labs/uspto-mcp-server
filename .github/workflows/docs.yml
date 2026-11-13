@@ -1,0 +1,67 @@
+name: docs
+
+# The documentation site (site/, Astro Starlight): built on pull requests, published to GitHub
+# Pages from main. The paths are the site's inputs. A chore(release) commit touches none of them,
+# so a release does not publish the site again.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'docs/sdk-reference.md'
+      - 'examples/**'
+      - '.github/workflows/docs.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'docs/sdk-reference.md'
+      - 'examples/**'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  # A newer push replaces a pull request build, but never interrupts a deployment.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '26'
+          cache: 'pnpm'
+          cache-dependency-path: site/pnpm-lock.yaml
+      # site/ is its own pnpm root with its own lockfile (site/pnpm-workspace.yaml).
+      - run: pnpm install --frozen-lockfile
+        working-directory: site
+      # Builds the pages, validates every internal link, and decodes the connect buttons.
+      - run: pnpm build
+        working-directory: site
+      - if: github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site/dist
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write # publish the site
+      id-token: write # deploy-pages proves where the artifact came from with OIDC
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
