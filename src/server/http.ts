@@ -78,6 +78,11 @@ export function originAllowed(originHeader: string, ownOrigin: string, allowlist
   }
 }
 
+/** The token of an `Authorization: Bearer <token>` header; the scheme is case-insensitive (RFC 9110). */
+export function bearerToken(header: string | undefined): string | undefined {
+  return /^bearer +(\S+)$/i.exec(header ?? '')?.[1];
+}
+
 function subjectOf(ctx: McpRequestContext): string | undefined {
   const s = ctx.authInfo?.extra?.[SUBJECT_KEY];
   return typeof s === 'string' ? s : undefined;
@@ -157,15 +162,15 @@ export async function startHttp(deps: CatalogDeps, opts: HttpOptions): Promise<H
         let token = '';
         let scopes: string[] = [];
         if (verifier && !opts.insecure) {
-          const auth = req.headers.authorization;
-          if (!auth?.startsWith('Bearer ')) {
+          const bearer = bearerToken(req.headers.authorization);
+          if (!bearer) {
             res.writeHead(401, {
               'content-type': 'application/json',
               'www-authenticate': `Bearer resource_metadata="${origin}${RESOURCE_METADATA_PATH}"`,
             });
             return res.end(JSON.stringify({ error: 'unauthorized' }));
           }
-          token = auth.slice(7);
+          token = bearer;
           try {
             const ctx = await verifier.verify(token);
             subject = ctx.subject;
@@ -182,7 +187,7 @@ export async function startHttp(deps: CatalogDeps, opts: HttpOptions): Promise<H
               'content-type': 'application/json',
               'www-authenticate': `Bearer resource_metadata="${origin}${RESOURCE_METADATA_PATH}", error="invalid_token"`,
             });
-            return res.end(JSON.stringify({ error: 'invalid_token', detail: (err as Error).message }));
+            return res.end(JSON.stringify({ error: 'invalid_token' })); // verifier details stay server-side
           }
           const q = quota.consume(subject);
           if (!q.allowed) {
