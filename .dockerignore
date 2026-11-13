@@ -5,6 +5,7 @@ mcpb-build
 *.mcpb
 .git
 .github
+!.github/workflows/release.yml
 .local
 .env
 .env.*
@@ -12,5 +13,7 @@ mcpb-build
 coverage
 *.log
 docs
-examples
+!docs/sdk-reference.md
 test
+site/dist
+site/.astro
