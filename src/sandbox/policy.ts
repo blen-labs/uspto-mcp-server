@@ -18,6 +18,17 @@ export interface PolicyResult {
   errors: string[];
 }
 
+/**
+ * True when the wrapped program is still the one call it was built as. Code that closes the
+ * wrapping function early runs outside it, where a module accepts `import` and `export`.
+ */
+function wrapperIntact(ast: any): boolean {
+  const [statement, ...rest] = ast.body;
+  const call = statement?.type === 'ExpressionStatement' ? statement.expression : undefined;
+  return rest.length === 0 && call?.type === 'CallExpression' && call.arguments.length === 0
+    && call.callee.type === 'ArrowFunctionExpression';
+}
+
 export function preflight(code: string): PolicyResult {
   const errors: string[] = [];
   // User code is executed inside an async wrapper, so allow top-level await/return.
@@ -37,14 +48,7 @@ export function preflight(code: string): PolicyResult {
   }
 
   const wrapped = `(async () => { ${code}\n })()`;
-  let ast: Node;
-  try {
-    ast = parse(wrapped, { ecmaVersion: 2022, sourceType: 'module', allowAwaitOutsideFunction: true });
-  } catch (err) {
-    return { ok: false, errors: [...errors, `Parse error: ${(err as Error).message}`] };
-  }
-
-  simple(ast, {
+  const visitors = {
     ImportDeclaration() { errors.push('imports are not allowed'); },
     ImportExpression() { errors.push('dynamic import() is not allowed'); },
     CallExpression(node: any) {
@@ -87,7 +91,21 @@ export function preflight(code: string): PolicyResult {
     MetaProperty(node: any) {
       if (node.meta?.name === 'import') errors.push('import.meta is not allowed');
     },
-  });
+  };
+  // A script and a module read HTML-like comments (`<!--`, `-->`) differently, so one text can
+  // be two programs. A runner executes the code as one or the other: check it as both.
+  for (const sourceType of ['module', 'script'] as const) {
+    let ast: Node;
+    try {
+      ast = parse(wrapped, { ecmaVersion: 2022, sourceType, allowAwaitOutsideFunction: true });
+    } catch (err) {
+      return { ok: false, errors: [...errors, `Parse error: ${(err as Error).message}`] };
+    }
+    if (!wrapperIntact(ast)) errors.push('the code must not close the function that wraps it');
+    simple(ast, visitors);
+    // The second reading matters only when the first one found nothing.
+    if (errors.length) break;
+  }
 
   return { ok: errors.length === 0, errors };
 }

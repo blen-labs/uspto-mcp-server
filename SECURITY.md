@@ -56,7 +56,9 @@ The `execute` tool runs user-supplied JavaScript with layered defenses:
    `process`, `globalThis`, `Buffer`, `Deno`, `fetch`, `Worker`, plus
    `__proto__` / `constructor` / `prototype` member access. The check rejects
    *static* uses of these names; runtime synthesis (e.g. via string
-   concatenation) is the next layer's job.
+   concatenation) is the next layer's job. It reads the code both as a module
+   and as a script, because the two grammars treat HTML-like comments
+   differently, and it rejects code that closes the function that wraps it.
 2. **Runtime isolation** — one of:
    - `isolated-vm`: a fresh V8 isolate per execution, **no host references**
      other than a Reference to the RPC dispatcher and a log sink for `console.*`;

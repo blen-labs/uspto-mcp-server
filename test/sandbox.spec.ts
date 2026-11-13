@@ -39,6 +39,26 @@ describe('sandbox policy preflight', () => {
   });
 });
 
+describe('sandbox policy preflight: one text, one program', () => {
+  it('rejects code that a script and a module read as different programs', () => {
+    // A module reads `<!--` as operators and the next lines as a template literal.
+    // A script reads the rest of line 1 as a comment and executes line 2.
+    const twoPrograms = 'let y = 1, x = 0 <!--y ; `\nreturn Function("return 7")()\n//`';
+    expect(preflight(twoPrograms).ok).toBe(false);
+  });
+
+  it('still allows operators that only look like such comments', () => {
+    expect(preflight('let x = 3, n = 0; while (x --> 0) n++; return n').ok).toBe(true);
+  });
+
+  it.for([
+    ['a second statement', 'return 1 })(); (async () => { return 2'],
+    ['a module declaration', '}); export const x = 1; (async () => {'],
+  ] as const)('rejects code that closes the wrapper function to add %s', ([, code]) => {
+    expect(preflight(code).ok).toBe(false);
+  });
+});
+
 describe.each([new IsolateRunner(), new DenoRunner()])('$kind RPC isolation', runner => {
   it('allows public reads but rejects POST access and cache poisoning across executions', async ({ skip }) => {
     if (!(await runner.available())) return skip();
