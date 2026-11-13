@@ -15,9 +15,15 @@ name: release
 #             Nothing goes live until a maintainer approves the staged version with 2FA
 #             (npmjs.com -> Staged Packages, or `npm stage approve <id>`).
 #
-# No-loop guarantee: the release commit is pushed with GITHUB_TOKEN, and GitHub never triggers
-# workflows for GITHUB_TOKEN-initiated events. If another commit lands on main mid-run, the
-# release push is rejected and this run fails; the newer push's run releases both.
+# The release commit is pushed as the org's release GitHub App (the ruleset's only bypass actor),
+# because main's ruleset requires PRs and GITHUB_TOKEN cannot be a bypass actor. The app's key
+# lives in the `release` environment (deployable from main only); the job mints a short-lived
+# token scoped to this repository with contents:write just before the push and uses it only there.
+# No-loop guarantee: app-token pushes DO trigger workflows, so the release commit's own run
+# skips `gates` (and therefore everything else) by its `chore(release):` subject, and
+# scripts/release.mjs ignores chore(release) commits (released=false; test/release.spec.ts).
+# If another commit lands on main mid-run, the release push is rejected and this run fails;
+# the newer push's run releases both.
 on:
   push:
     branches: [main]
@@ -43,8 +49,9 @@ jobs:
   cut:
     needs: gates
     runs-on: ubuntu-latest
+    environment: release # holds the release app's key; deployments restricted to main
     permissions:
-      contents: write # release commit, tag, GitHub Release
+      contents: write # GitHub Release (the commit and tag are pushed as the release app)
     outputs:
       released: ${{ steps.cut.outputs.released || (inputs.republish && 'true') || 'false' }}
       version: ${{ steps.cut.outputs.version }}
@@ -52,7 +59,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # full history + tags: the bump is computed from commits since the last tag
-          persist-credentials: true # the release commit is pushed with these credentials
+          persist-credentials: false # nothing below pushes with GITHUB_TOKEN; see the final step
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -75,10 +82,21 @@ jobs:
           name: npm-tarball
           path: blen-uspto-mcp-server-*.tgz
           if-no-files-found: error
+      - name: Mint a short-lived token for the release push
+        id: app-token
+        if: steps.cut.outputs.released == 'true'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
       - name: Commit, tag, and create the GitHub Release
         if: steps.cut.outputs.released == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
           VERSION: ${{ steps.cut.outputs.version }}
           NOTES_FILE: ${{ steps.cut.outputs.notes_file }}
           BUMP: ${{ steps.cut.outputs.bump }}
@@ -90,7 +108,12 @@ jobs:
             git commit -m "chore(release): v${VERSION}"
           fi
           git tag -a "v${VERSION}" -m "v${VERSION}"
-          git push origin HEAD:main --follow-tags
+          # Push as the release app (the ruleset's only bypass actor). The token is passed as a
+          # one-off header, never stored in .git/config, and repository hooks are disabled.
+          auth=$(printf 'x-access-token:%s' "$APP_TOKEN" | base64 -w0)
+          echo "::add-mask::${auth}" # the base64 form is not covered by the token's own mask
+          git -c core.hooksPath=/dev/null -c http.https://github.com/.extraheader="AUTHORIZATION: basic ${auth}" \
+            push "https://github.com/${REPO}.git" HEAD:main --follow-tags
           gh release create "v${VERSION}" --title "v${VERSION}" --notes-file "${NOTES_FILE}" blen-uspto-mcp-server-*.tgz
 
   publish:

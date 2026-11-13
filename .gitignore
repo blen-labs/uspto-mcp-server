@@ -19,3 +19,6 @@ release-notes.generated.md
 
 # Local verification fixtures and browser captures
 .local/
+
+# Private keys (e.g. GitHub App .pem downloads) never belong in the repo
+*.pem

@@ -114,8 +114,14 @@ Releases are **continuous** (`.github/workflows/release.yml`): every push to
    `src/sdk/bindings.ts`, and prepends the CHANGELOG section (logic in
    `scripts/release-lib.mjs`, covered by `test/release.spec.ts`); it builds, packs
    the tarball, pushes a `chore(release): vX.Y.Z` commit with the annotated tag,
-   and creates the GitHub Release with the tarball attached. The release commit is
-   pushed with `GITHUB_TOKEN`, which GitHub never triggers workflows for — no
+   and creates the GitHub Release with the tarball attached. `main` requires PRs,
+   so the release commit is pushed as the org's release GitHub App, the ruleset's
+   only bypass actor (contents: write on this repository only). Its key is the
+   `RELEASE_APP_PRIVATE_KEY` secret and its client ID the `RELEASE_APP_CLIENT_ID`
+   variable, both in the `release` environment (deployable from `main` only); the
+   job mints a short-lived token just before the push and uses it only there.
+   App-token pushes trigger workflows, so the release commit's own run skips
+   on its `chore(release):` subject, and `release.mjs` ignores such commits: no
    release loop.
 3. The `publish` job — holding only `id-token: write`, in the `npm` environment
    (deployments allowed from `main` only) — downloads that exact tarball and
