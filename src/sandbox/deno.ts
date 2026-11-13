@@ -23,9 +23,12 @@ const MEMORY_HEADROOM_MB = 96;
  * Boundary: Node host (owns the deadline, byte budgets, and the child's lifetime)
  *   → `deno run` of a fixed supervisor script with NO --allow-* flags (deny-by-default: no net, fs,
  *     env, ffi, subprocess), a minimal environment, and no user code on disk
- *   → a module Worker that receives the user code by message. Before user code runs, the worker's
- *     ambient globals that could reach the process or the protocol (`Deno`, `postMessage`, `fetch`,
- *     `Worker`, ...) are replaced with `undefined` and `console` is redirected to log messages.
+ *   → a module Worker that receives the user code by message. Before user code runs, the worker
+ *     deletes every global that is not part of the language (`Deno`, `fetch`, `Worker`, `process`,
+ *     `postMessage`, ...), keeps a `console` that posts log messages, and refuses to run if a global
+ *     stays. V8 does not build code from strings in this process (`eval`, `Function`), so the user
+ *     code is loaded as a module, and a module cannot be loaded by name without the `import()`
+ *     syntax that the preflight rejects.
  *
  * Memory: V8's heap flag does not count buffers (ArrayBuffer and typed arrays live outside the
  * JavaScript heap). The supervisor therefore watches the resident size of its whole process and
@@ -83,7 +86,7 @@ export class DenoRunner implements SandboxRunner {
     try {
       child = spawn('deno', [
         'run', '--no-prompt', '--no-config', '--no-lock', '--no-remote', '--no-npm', '--quiet',
-        `--v8-flags=--max-old-space-size=${memoryMb}`,
+        `--v8-flags=--max-old-space-size=${memoryMb},--disallow-code-generation-from-strings`,
         DenoRunner.supervisor(),
       ], { stdio: ['pipe', 'pipe', 'pipe'], env: childEnv(), detached: process.platform !== 'win32' });
     } catch (err) {
@@ -251,9 +254,21 @@ writeLine('USPTO-SANDBOX ' + TOKEN);
 const WORKER_SOURCE = ${'`'}
 // Trusted primitives, captured before user code exists: budgets below use these, so user code that
 // replaces JSON.stringify, TextEncoder or Promise.prototype.then cannot push oversized data out.
-const post = self.postMessage.bind(self);
-const listen = self.addEventListener.bind(self);
+const G = globalThis;
+const post = G.postMessage.bind(G);
+const listen = G.addEventListener.bind(G);
 const S = JSON.stringify, P = JSON.parse, Str = String, apply = Reflect.apply, then = Promise.prototype.then;
+const ownKeys = Reflect.ownKeys, deleteProperty = Reflect.deleteProperty, defineProperty = Object.defineProperty;
+const BlobOf = Blob, urlFor = URL.createObjectURL.bind(URL), forgetUrl = URL.revokeObjectURL.bind(URL);
+// The language's own globals. A program gets these, console and the SDK bindings.
+const LANGUAGE = new Set(['globalThis', 'Infinity', 'NaN', 'undefined', 'eval', 'isFinite', 'isNaN', 'parseFloat', 'parseInt',
+  'decodeURI', 'decodeURIComponent', 'encodeURI', 'encodeURIComponent', 'escape', 'unescape',
+  'AggregateError', 'Array', 'ArrayBuffer', 'AsyncDisposableStack', 'BigInt', 'BigInt64Array', 'BigUint64Array', 'Boolean',
+  'DataView', 'Date', 'DisposableStack', 'Error', 'EvalError', 'FinalizationRegistry', 'Float16Array', 'Float32Array',
+  'Float64Array', 'Function', 'Int8Array', 'Int16Array', 'Int32Array', 'Iterator', 'Map', 'Number', 'Object', 'Promise',
+  'Proxy', 'RangeError', 'ReferenceError', 'RegExp', 'Set', 'SharedArrayBuffer', 'String', 'SuppressedError', 'Symbol',
+  'SyntaxError', 'TypeError', 'Uint8Array', 'Uint8ClampedArray', 'Uint16Array', 'Uint32Array', 'URIError', 'WeakMap',
+  'WeakRef', 'WeakSet', 'Atomics', 'Intl', 'JSON', 'Math', 'Reflect', 'Temporal']);
 const encoder = new TextEncoder(), encode = TextEncoder.prototype.encode, sl = String.prototype.slice;
 // The intrinsic %TypedArray%.prototype.byteLength getter, captured: user code may redefine
 // Uint8Array.prototype.length, but cannot change a getter we already hold.
@@ -308,17 +323,19 @@ function run(code, bindings, limits) {
     if (logBytes > L.maxLogBytes - L.logTruncated.length - L.logLineOverhead || logLines >= L.maxLogLines) { logDone = true; text = L.logTruncated; }
     post({ t: 'log', text });
   };
-  self.console = { log, info: log, warn: log, error: log, debug: log };
-  for (const k of ['Deno', 'postMessage', 'close', 'fetch', 'WebSocket', 'WebSocketStream', 'Worker', 'EventSource',
-                   'navigator', 'caches', 'localStorage', 'sessionStorage', 'importScripts', 'BroadcastChannel']) {
-    try { Object.defineProperty(self, k, { value: undefined, writable: false, configurable: false }); } catch {}
+  // Deno puts its whole runtime on the global object (Deno, fetch, Worker, process, Buffer, ...).
+  // Delete every name that is not the language's own, and do not run the program if one stays:
+  // a name on a deny list would miss whatever a later Deno version adds.
+  const stayed = [];
+  for (const key of ownKeys(G)) {
+    if (typeof key === 'string' && !LANGUAGE.has(key) && !deleteProperty(G, key)) stayed[stayed.length] = key;
   }
-  for (const name of bindings) {
-    try { Object.defineProperty(self, name, { value: makeProxy(name), writable: false, configurable: false }); } catch {}
-  }
-  let fn;
-  try { fn = new Function('"use strict"; return (async () => {\\n' + code + '\\n})();'); }
-  catch (e) { post({ t: 'done', ok: false, error: { name: Str(e?.name ?? 'SyntaxError'), message: cut(Str(e?.message ?? e), L.maxError) } }); return; }
+  if (stayed.length) { post({ t: 'done', ok: false, error: { name: 'SandboxSetupError', message: 'The sandbox could not remove a runtime global.' } }); return; }
+  // The global object still inherits the event methods of a worker (addEventListener,
+  // dispatchEvent). Deno itself calls them there to report an unhandled rejection, so they stay;
+  // they act only on this worker's own events.
+  defineProperty(G, 'console', { value: { log, info: log, warn: log, error: log, debug: log }, writable: true, configurable: true });
+  for (const name of bindings) defineProperty(G, name, { value: makeProxy(name), writable: false, configurable: false });
   const fail = (e) => {
     let name = 'Error', message = '', status;
     try { name = cut(Str(e?.name ?? 'Error'), 100); message = cut(Str(e?.message !== undefined ? e.message : e), L.maxError); status = typeof e?.status === 'number' ? e.status : undefined; } catch {}
@@ -332,9 +349,10 @@ function run(code, bindings, limits) {
     if (size > L.maxResultBytes) post({ t: 'done', ok: false, tooLarge: true, size });
     else post({ t: 'done', ok: true, json });
   };
-  let started;
-  try { started = fn(); } catch (e) { fail(e); return; }
-  apply(then, started, [done, fail]);
+  // V8 builds no code from strings here, so the program is loaded as a module. The wrapper is the
+  // one the preflight checked: the program is the body of one async function.
+  const url = urlFor(new BlobOf(['export const result = (async () => {\\n' + code + '\\n})();'], { type: 'application/javascript' }));
+  apply(then, import(url), [(loaded) => { forgetUrl(url); apply(then, loaded.result, [done, fail]); }, fail]);
 }
 ${'`'};
 

@@ -108,7 +108,8 @@ describe('deno supervisor', () => {
   it('never embeds user code or binding names (they arrive by message)', () => {
     expect(SUPERVISOR_SOURCE).not.toContain('__USER_CODE__');
     expect(SUPERVISOR_SOURCE).toContain("crypto.getRandomValues");
-    expect(SUPERVISOR_SOURCE).toContain("'Deno', 'postMessage'");
+    // V8 builds no code from strings in the sandbox process, so the supervisor must not ask it to.
+    expect(SUPERVISOR_SOURCE).not.toContain('new Function');
   });
 });
 
@@ -260,10 +261,27 @@ describe('deno runner isolation (gated on availability)', () => {
     expect(res).toMatchObject({ ok: true, value: 'ok' });
   });
 
-  it('removes ambient Deno, network and messaging globals, even via the Function constructor', async ({ skip }) => {
+  it('cannot build code from a string', async ({ skip }) => {
     if (!(await runner.available())) return skip();
-    const res = await run('const c = "constr" + "uctor"; const F = (async () => {})[c][c]; return F("return [typeof Deno, typeof self.Deno, typeof self.fetch, typeof self.postMessage, typeof self.Worker]")();');
-    expect(res).toMatchObject({ ok: true, value: ['undefined', 'undefined', 'undefined', 'undefined', 'undefined'] });
+    const res = await run('const c = "constr" + "uctor"; const F = (async () => {})[c][c]; try { F("return 1"); return "built"; } catch (e) { return e.name; }');
+    expect(res).toMatchObject({ ok: true, value: 'EvalError' });
+  });
+
+  it('gives a program the language globals, console and the SDK bindings, and no runtime globals', async ({ skip }) => {
+    if (!(await runner.available())) return skip();
+    // Names that the preflight accepts, so the runtime alone decides the answer.
+    const gone = ['self', 'navigator', 'postMessage', 'close', 'crypto', 'Blob', 'Request', 'caches',
+      'setTimeout', 'setImmediate', 'structuredClone', 'performance', 'location'];
+    expect(await run(`return [${gone.map(n => `typeof ${n}`).join(', ')}];`)).toMatchObject({ ok: true, value: gone.map(() => 'undefined') });
+    expect(await run('console.log("kept"); return [typeof JSON, typeof Promise, typeof Intl, typeof odp];'))
+      .toMatchObject({ ok: true, value: ['object', 'function', 'object', 'function'], logs: ['kept'] });
+  });
+
+  it('removes the runtime globals that the preflight bans too, so the runtime does not depend on it', async ({ skip }) => {
+    if (!(await runner.available())) return skip();
+    // Straight to the supervisor: no preflight has seen this code.
+    const res = await superviseDirectly('return [typeof Deno, typeof fetch, typeof Worker, typeof WebSocket, typeof process, typeof Buffer, typeof global, typeof WebAssembly];');
+    expect(res).toMatchObject({ t: 'done', ok: true, json: JSON.stringify(Array(8).fill('undefined')) });
   });
 
   it('resolves only after its child process has exited (success, timeout, abort)', async ({ skip }) => {
@@ -297,3 +315,37 @@ describe('sandbox selection', () => {
     } finally { process.env.PATH = prev; }
   });
 });
+
+/** Runs code in the Deno supervisor with no preflight and returns its `done` frame. */
+async function superviseDirectly(code: string): Promise<Record<string, unknown>> {
+  const { spawn } = await import('node:child_process');
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'uspto-supervisor-test-'));
+  writeFileSync(join(dir, 'supervisor.js'), SUPERVISOR_SOURCE);
+  const child = spawn('deno', ['run', '--no-prompt', '--no-config', '--no-lock', '--no-remote', '--no-npm', '--quiet', join(dir, 'supervisor.js')]);
+  try {
+    return await new Promise((resolve, reject) => {
+      let token = '', buffered = '';
+      child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+        buffered += chunk;
+        for (let nl; (nl = buffered.indexOf('\n')) >= 0; buffered = buffered.slice(nl + 1)) {
+          const line = buffered.slice(0, nl);
+          if (!token) {
+            token = line.replace('USPTO-SANDBOX ', '');
+            child.stdin.write(`${token}${JSON.stringify({ t: 'start', code, bindings: [], memoryBytes: 256 * 1024 * 1024, limits: { maxLogBytes: 65536, maxLogLines: 1000, logLineOverhead: 16, logTruncated: '[logs truncated]', maxRpcArgBytes: 65536, maxResultBytes: 262144, maxError: 4000 } })}\n`);
+          } else if (line.startsWith(token)) {
+            const frame = JSON.parse(line.slice(token.length)) as Record<string, unknown>;
+            if (frame.t === 'done') resolve(frame);
+          }
+        }
+      });
+      child.on('exit', code => reject(new Error(`the supervisor exited (code ${code})`)));
+      child.on('error', reject);
+    });
+  } finally {
+    child.kill('SIGKILL');
+    rmSync(dir, { recursive: true, force: true });
+  }
+}

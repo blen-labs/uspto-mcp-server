@@ -68,9 +68,12 @@ The `execute` tool runs user-supplied JavaScript with layered defenses:
    - Deno: `deno run --no-prompt --no-config --no-lock --no-remote --no-npm` of a
      fixed supervisor script with **no `--allow-*` flags** (no net/fs/env/ffi/
      subprocess access) and a minimal environment. User code arrives by message
-     (it is never written to disk) and runs in a module Worker whose `Deno`,
-     `postMessage`, `fetch`, `Worker`, `WebSocket`, … globals are replaced with
-     `undefined`. Frames to the host are prefixed with a random token the worker
+     (it is never written to disk) and runs as a module in a Worker. Before it
+     runs, the worker deletes every global that is not part of the language
+     (`Deno`, `fetch`, `Worker`, `process`, `postMessage`, …) and refuses to run
+     if one stays, so a program gets the language's globals, `console` and the SDK
+     bindings. V8 builds no code from strings in this process (`eval` and
+     `Function` throw). Frames to the host are prefixed with a random token the worker
      never sees; all other output is untrusted text. The host owns the deadline,
      kills the process group, and waits for the child to exit before releasing the
      execution. The heap flag does not count buffers, so the supervisor also ends

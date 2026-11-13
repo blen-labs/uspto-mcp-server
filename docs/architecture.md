@@ -230,9 +230,11 @@ Two runners:
   files, env, FFI or subprocesses) and a minimal environment. The supervisor file
   holds no user data; it is written once per process into a `0700` temporary
   directory and removed at exit. The supervisor generates a random token,
-  announces it, receives the user code in a stdin message, and runs it in a module
-  **Worker** whose `Deno`, `postMessage`, `fetch`, `Worker`, `WebSocket`, … globals
-  are replaced with `undefined` and whose `console` posts log messages. Frames to
+  announces it, receives the user code in a stdin message, and runs it as a module
+  in a **Worker**. The worker first deletes every global that is not part of the
+  language (`Deno`, `fetch`, `Worker`, `process`, `postMessage`, …) and refuses to
+  run if one stays; its `console` posts log messages. Deno runs with
+  `--disallow-code-generation-from-strings`, so `eval` and `Function` throw. Frames to
   the host are token-prefixed JSON lines; the worker never sees the token, and any
   other stdout bytes are treated as untrusted log text. The Node parent owns the
   deadline, kills the process group on every exit path, and resolves only after the
