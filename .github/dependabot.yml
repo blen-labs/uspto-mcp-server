@@ -7,9 +7,19 @@ updates:
     groups:
       dev-tooling:
         dependency-type: development
+    ignore:
+      # Types track the OLDEST supported runtime (engines: ^24.11.0 || ^26.0.0), so code
+      # can't use APIs Node 24 lacks. Bump the major only when Node 24 support is dropped.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
   - package-ecosystem: docker
     directory: /deploy
     schedule: { interval: weekly }
+    ignore:
+      # The image runs an LTS line; move majors deliberately (isolated-vm prebuilds and
+      # engines must cover the new major first). Digest and patch bumps still come through.
+      - dependency-name: node
+        update-types: ['version-update:semver-major']

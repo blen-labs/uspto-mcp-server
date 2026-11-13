@@ -46,7 +46,7 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
-          deno-version: v2.7.14
+          deno-version: v2.9.8
       - run: pnpm install --frozen-lockfile
       - run: pnpm audit --audit-level moderate
       - run: pnpm typecheck
@@ -65,7 +65,7 @@ jobs:
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version: '26'
           cache: 'pnpm'
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
@@ -81,6 +81,12 @@ jobs:
           mkdir -p /tmp/mcpb && cd /tmp/mcpb && unzip -q "$GITHUB_WORKSPACE/uspto-mcp-server.mcpb"
           test -f LICENSE && test -f NOTICE
           node "$GITHUB_WORKSPACE/scripts/mcpb-smoke.mjs" /tmp/mcpb
+      # The manifest also admits Node 24 (engines floor): run the same bundle there.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: MCPB smoke on Node 24
+        run: node --version && node "$GITHUB_WORKSPACE/scripts/mcpb-smoke.mjs" /tmp/mcpb
 
   docker:
     name: docker image
@@ -103,7 +109,7 @@ jobs:
       - name: Runs execute in the Deno sandbox
         run: |
           docker run -d --name smoke -p 127.0.0.1:8080:8080 -e USPTO_PUBLIC_ORIGIN=http://127.0.0.1:8080 uspto-mcp:ci node dist/bin.js --http --insecure --host 0.0.0.0 --sandbox deno
-          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8080/health && break; sleep 1; done
+          for _ in $(seq 1 20); do curl -fsS http://127.0.0.1:8080/health && break; sleep 1; done
           curl -fsS http://127.0.0.1:8080/health | grep -q '"sandbox":"deno"'
           curl -fsS -X POST http://127.0.0.1:8080/mcp -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -H 'mcp-protocol-version: 2025-06-18' \
             -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"execute","arguments":{"code":"return 1 + 41"}}}' | grep -q '"value":42'

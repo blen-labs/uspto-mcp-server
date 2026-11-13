@@ -3,9 +3,11 @@
 # ---- Stage 1: build ---------------------------------------------------------
 # isolated-vm 7 ships prebuilt binaries for Node 24/26 (glibc and musl), so no
 # compiler toolchain is needed.
-FROM node:24-bookworm-slim AS builder
+# Base images are pinned by digest; Dependabot (docker ecosystem) proposes digest bumps.
+FROM node:26-trixie-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc AS builder
 WORKDIR /app
-RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
+# Node 25+ no longer bundles corepack; install the pnpm that package.json "packageManager" pins.
+RUN npm install -g --ignore-scripts pnpm@10.33.0
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs ./
 RUN pnpm install --frozen-lockfile
@@ -18,10 +20,10 @@ COPY legal ./legal
 RUN pnpm build && pnpm prune --prod
 
 # ---- Deno: the process-isolated sandbox used for multi-user HTTP serving -----
-FROM denoland/deno:bin-2.7.14 AS deno
+FROM denoland/deno:bin-2.9.8@sha256:b507583d3c68ba69f3ed2ce5969ae5b8b70f43421c781279c7aea06435263543 AS deno
 
 # ---- Stage 2: runtime -------------------------------------------------------
-FROM node:24-bookworm-slim AS runtime
+FROM node:26-trixie-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc AS runtime
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates dumb-init \
