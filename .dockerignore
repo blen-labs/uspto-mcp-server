@@ -1,0 +1,16 @@
+# Only what the Dockerfile COPYs is needed; keep secrets and local state out of the build context.
+**/node_modules
+dist
+mcpb-build
+*.mcpb
+.git
+.github
+.local
+.env
+.env.*
+!.env.example
+coverage
+*.log
+docs
+examples
+test

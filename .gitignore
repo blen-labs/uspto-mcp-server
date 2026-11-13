@@ -1,0 +1,21 @@
+node_modules/
+dist/
+*.log
+.env
+.env.*
+!.env.example
+coverage/
+.vitest-cache/
+*.tsbuildinfo
+.DS_Store
+mcpb-build/
+*.mcpb
+launch-video/
+
+# internal design-process artifacts, not for the public tree
+docs/superpowers/
+deno.lock
+release-notes.generated.md
+
+# Local verification fixtures and browser captures
+.local/

@@ -1,0 +1,14 @@
+allowBuilds:
+  esbuild: true
+  isolated-vm: true
+
+# Patched transitive versions for dev tooling whose own ranges lag behind security fixes
+# (pnpm audit). Remove an entry once the parent package ships the fix itself.
+overrides:
+  '@anthropic-ai/mcpb>zod': ^4.6.7
+  'external-editor>tmp': ^0.2.6
+  '@typescript-eslint/typescript-estree>minimatch': ^11.0.1
+  # eslint 10 and @eslint/config-array declare minimatch ^10, and every 10.x is affected
+  # (GHSA-g3hv-75wg-m249); 11 keeps the API they use (lint verified).
+  'eslint>minimatch': ^11.0.1
+  '@eslint/config-array>minimatch': ^11.0.1
