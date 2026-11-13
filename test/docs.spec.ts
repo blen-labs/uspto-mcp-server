@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import express from 'express';
 import { createHash } from 'node:crypto';
+import { get } from 'node:http';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -39,10 +40,20 @@ describe('documentation site handler', () => {
       expect(asset.headers.get('cache-control')).toContain('immutable');
       await asset.arrayBuffer();
 
-      for (const path of ['/docs/missing/', '/docs/../outside.txt', '/docs/%2e%2e/outside.txt']) {
-        const response = await fetch(`${base}${path}`);
+      const port = (server.address() as AddressInfo).port;
+      // fetch() normalizes dot segments before sending, so traversal needs a raw request line.
+      const raw = (path: string) =>
+        new Promise<{ status: number; body: string }>((resolve, reject) => {
+          get({ host: '127.0.0.1', port, path }, (res) => {
+            let body = '';
+            res.on('data', (chunk) => (body += chunk));
+            res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
+          }).on('error', reject);
+        });
+      for (const path of ['/docs/missing/', '/docs/../outside.txt', '/docs/%2e%2e/outside.txt', '/docs/..%2foutside.txt']) {
+        const response = await raw(path);
         expect(response.status, path).toBe(404);
-        expect(await response.text(), path).not.toContain('secret');
+        expect(response.body, path).not.toContain('secret');
       }
       expect((await fetch(`${base}/docs/`, { method: 'POST' })).status).toBe(404);
     } finally {
