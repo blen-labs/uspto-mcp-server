@@ -9,7 +9,7 @@ import { createOdpSource, ODP_BASE_URL } from '../sdk/sources/odp.js';
 import { createTsdrSource, TSDR_BASE_URL } from '../sdk/sources/tsdr.js';
 import type { Source, SourceConfig } from '../sdk/sources/source.js';
 import { baseSourceConfig } from '../supervisor/index.js';
-import { gateHandle } from './keyGates.js';
+import { configureKeyGates, gateHandle } from './keyGates.js';
 import { LRUCache } from 'lru-cache';
 import { createAccountApp } from './app.js';
 import { ACCOUNT_MCP_PATH } from './paths.js';
@@ -43,6 +43,7 @@ const FACTORIES: Record<KeyKind, { create: KeyedFactory; baseUrl: string; label:
  * requests with one key). Single replica only: other processes do not share these gates.
  */
 export function accountDependencies(deps: CatalogDeps, cfg: SupervisorConfig, store: Store, dispatcher?: Dispatcher): CatalogDeps {
+  configureKeyGates(cfg.limits);
   // Even if the process has shared keys, never put them in the hosted account catalog.
   const clients = Object.fromEntries(Object.entries(deps.sdk.clients).filter(([name]) => !isKeyKind(name)));
   const methods = Object.fromEntries(Object.entries(deps.sdk.methods).filter(([name]) => !isKeyKind(name)));

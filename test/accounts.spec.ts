@@ -108,6 +108,19 @@ it('a rate-limited key check cools the credential down by the same rules as othe
   expect(gateFor('odp', k2, LIMIT_DEFAULTS.odp).pausedForMs()).toBeGreaterThanOrEqual(4000);
 });
 
+it('a credential gate uses the configured limits even when a key check creates it', async () => {
+  const { configureKeyGates } = await import('../src/accounts/keyGates.js');
+  configureKeyGates({ odp: { ...LIMIT_DEFAULTS.odp, concurrency: 1, maxWaitMs: 30 }, tsdr: LIMIT_DEFAULTS.tsdr });
+  try {
+    const g = gateFor('odp', 'configured-credential-0123456789'); // created by a key check: no limits passed
+    const held = await g.acquire();
+    await expect(g.acquire()).rejects.toThrow(/30ms/); // the configured maxWaitMs, not the 30 s default
+    held();
+  } finally {
+    configureKeyGates({ odp: LIMIT_DEFAULTS.odp, tsdr: LIMIT_DEFAULTS.tsdr });
+  }
+});
+
 it('a cached client keeps sharing admission after the registry retires idle gates', async () => {
   const k = 'retired-credential-0123456789';
   const handle = gateHandle('odp', k, LIMIT_DEFAULTS.odp); // what a cached account client holds
@@ -284,8 +297,9 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
       });
       expect(r.status, `${uri}: ${await r.clone().text()}`).toBe(201);
     }
-    // Non-loopback HTTP stays refused.
+    // Non-loopback HTTP stays refused, at registration and in a JSON-bodied authorize request.
     expect((await send(fetch, '/api/auth/oauth2/register', { redirect_uris: ['http://evil.example/cb'] })).status).toBe(400);
+    expect((await send(fetch, '/api/auth/oauth2/authorize', { client_id: 'x', redirect_uri: 'http://evil.example/cb', response_type: 'code' })).status).toBe(400);
   });
   it('discovers OAuth, challenges anonymous callers, and offers Google sign-in', async () => {
     const metadata = await fetch(`${config.origin}/.well-known/oauth-protected-resource/mcp/account`);

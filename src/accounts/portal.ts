@@ -7,7 +7,6 @@ import { personalOwner, isKeyKind, KEY_KINDS, type KeyKind, type Store } from '.
 import type { Auth } from './provider.js';
 import { log } from '../util/logger.js';
 import { gateFor } from './keyGates.js';
-import { LIMIT_DEFAULTS } from '../supervisor/index.js';
 import { parseRetryAfter } from '../util/httpClient.js';
 
 /**
@@ -26,7 +25,7 @@ export async function checkKey(kind: KeyKind, key: unknown, fetcher: typeof fetc
   if (typeof key !== 'string' || !/^[A-Za-z0-9._-]{16,128}$/.test(key)) return `Enter your ${label} API key.`;
   // The check is a request with this key, so it waits its turn like any other use of the key.
   let release: (() => void) | undefined;
-  const gate = gateFor(kind, key, LIMIT_DEFAULTS[kind]);
+  const gate = gateFor(kind, key);
   try {
     release = await gate.acquire();
   } catch {

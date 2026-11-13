@@ -11,7 +11,7 @@ import { installPortal } from './portal.js';
 import { digest } from './crypto.js';
 import { log } from '../util/logger.js';
 import { IpRateLimiter, clientIp } from '../server/ipRateLimiter.js';
-import { originAllowed, MAX_REQUEST_BODY_BYTES } from '../server/http.js';
+import { originAllowed, bearerToken, MAX_REQUEST_BODY_BYTES } from '../server/http.js';
 import { ACCOUNT_MCP_PATH, PUBLIC_MCP_PATH } from './paths.js';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -41,6 +41,17 @@ function registeredRedirects(body: Buffer): unknown {
   } catch {
     return [];
   }
+}
+/** Fields of a POST body, whether form-encoded or JSON (either may reach Better Auth). */
+function jsonOrForm(body: Buffer): { get(name: string): string | null } {
+  const text = body.toString('utf8').trim();
+  if (text.startsWith('{')) {
+    try {
+      const o = JSON.parse(text) as Record<string, unknown>;
+      return { get: name => (typeof o[name] === 'string' ? o[name] as string : o[name] === undefined ? null : String(o[name])) };
+    } catch { return { get: () => 'invalid' }; }
+  }
+  return new URLSearchParams(text);
 }
 /** MCP's rule for redirect URIs: HTTPS, or plain HTTP only to this computer. */
 export function allowedRedirect(value: unknown) {
@@ -112,8 +123,10 @@ export async function createAccountApp(
   const metadataUrl = `${config.origin}/.well-known/oauth-protected-resource${ACCOUNT_MCP_PATH}`;
   const originHost = new URL(config.origin).host;
   app.use((req, res, next) => {
+    // Hashed bundles under /assets set their own immutable Cache-Control; serve-static leaves an
+    // existing header alone, so no-store here would defeat it.
+    if (!req.path.startsWith('/assets/')) res.set('Cache-Control', 'no-store');
     res.set({
-      'Cache-Control': 'no-store',
       'Referrer-Policy': 'strict-origin',
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'DENY',
@@ -177,7 +190,7 @@ export async function createAccountApp(
     // (see below). The anonymous endpoint has its own per-IP bucket (USPTO_IP_RPS/BURST) below.
     const platform =
       CROSS_ORIGIN_PATHS.test(req.path) &&
-      (req.path !== ACCOUNT_MCP_PATH || !!req.headers.authorization?.startsWith('Bearer '));
+      (req.path !== ACCOUNT_MCP_PATH || !!bearerToken(req.headers.authorization));
     if (!platform && !(await store.allow(`http:${ipOf(req)}`, 600, 60))) return tooMany(res);
     next();
   });
@@ -212,11 +225,10 @@ export async function createAccountApp(
         )
         .json({ error });
     const authorization = req.headers.authorization;
-    if (!authorization?.startsWith('Bearer ') || authorization.length > 4096)
-      return challenge(401, 'invalid_token');
+    const value = authorization && authorization.length <= 4096 ? bearerToken(authorization) : undefined;
+    if (!value) return challenge(401, 'invalid_token');
     // A flood guard sized for a connector's shared IP; the per-user limit below does the real work.
     if (!(await store.allow(`mcp-ip:${ipOf(req)}`, 6000, 60))) return tooMany(res);
-    const value = authorization.slice(7);
     // Opaque tokens are checked against their hashed database row on every request, so
     // revocation, client disabling, user deletion and loss of email verification apply immediately.
     const context = await auth.$context;
@@ -295,10 +307,9 @@ export async function createAccountApp(
           ? registeredRedirects(body)
           : req.path === '/oauth2/authorize'
             ? [
-                (req.method === 'POST' && Buffer.isBuffer(body)
-                  ? new URLSearchParams(body.toString('utf8'))
-                  : authUrl.searchParams
-                ).get('redirect_uri'),
+                req.method === 'POST' && Buffer.isBuffer(body)
+                  ? jsonOrForm(body).get('redirect_uri')
+                  : authUrl.searchParams.get('redirect_uri'),
               ].filter(Boolean)
             : [];
       if (!Array.isArray(redirects) || !redirects.every(allowedRedirect))
