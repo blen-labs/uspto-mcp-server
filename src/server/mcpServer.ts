@@ -55,7 +55,7 @@ export const SERVER_INSTRUCTIONS = [
 
 export function buildMcpServer(deps: CatalogDeps, requestCtx?: RequestCtx): McpServer {
   const server = new McpServer(
-    { name: 'uspto-mcp-server', version: '0.1.2' }, // x-release-version
+    { name: 'uspto-mcp-server', version: '0.2.0' }, // x-release-version
     {
       capabilities: { tools: {} },
       instructions: SERVER_INSTRUCTIONS,

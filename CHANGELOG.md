@@ -7,6 +7,25 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 
 
 
+
+## [0.2.0] - 2026-11-13
+
+### Added
+- serve the documentation site at /docs (accounts)
+
+### Fixed
+- override fflate to a patched version (site)
+
+### Changed
+- describe where the site is served (site)
+- cover /docs wiring and real path traversal (accounts)
+- publish at uspto.mcp.blenlabs.com/docs (site)
+- audit the site's lockfile and drop the GitHub Pages workflow
+- build the documentation site into the image (docker)
+- point remote clients at the hosted connector (site)
+- publish the documentation site to GitHub Pages (docs)
+- add the documentation site (site)
+- attach the Claude Desktop bundle to the GitHub Release (release)
 ## [0.1.2] - 2026-11-13
 
 ### Fixed
@@ -55,7 +74,8 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 - Docker image (Node 24 + Deno), an MCPB bundle (manifest v0.4) that prompts for keys, and
   third-party license notices in every artifact.
 
-[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/blen-labs/uspto-mcp-server/releases/tag/v0.1.0
