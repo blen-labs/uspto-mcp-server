@@ -18,11 +18,7 @@ export class IpRateLimiter {
   }
 
   allow(ip: string): boolean {
-    const now = Date.now();
-    const b = this.buckets.get(ip) ?? { tokens: this.burst, updatedAt: now };
-    const elapsedSec = (now - b.updatedAt) / 1000;
-    b.tokens = Math.min(this.burst, b.tokens + elapsedSec * this.rps);
-    b.updatedAt = now;
+    const b = this.refilled(ip);
     if (b.tokens < 1) {
       this.buckets.set(ip, b);
       return false;
@@ -30,6 +26,21 @@ export class IpRateLimiter {
     b.tokens -= 1;
     this.buckets.set(ip, b);
     return true;
+  }
+
+  /** Gives back a token that `allow(ip)` spent, for a request that turned out not to count. */
+  refund(ip: string): void {
+    const b = this.refilled(ip);
+    b.tokens = Math.min(this.burst, b.tokens + 1);
+    this.buckets.set(ip, b);
+  }
+
+  private refilled(ip: string): { tokens: number; updatedAt: number } {
+    const now = Date.now();
+    const b = this.buckets.get(ip) ?? { tokens: this.burst, updatedAt: now };
+    b.tokens = Math.min(this.burst, b.tokens + ((now - b.updatedAt) / 1000) * this.rps);
+    b.updatedAt = now;
+    return b;
   }
 }
 
