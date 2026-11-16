@@ -227,6 +227,9 @@ export async function createAccountApp(
       return res.status(403).json({ error: 'origin_not_allowed' });
     await publicNode(req, res);
   });
+  // Failed token checks per address (2 each second, bursts of 120): enough for the expired tokens
+  // of many users behind one connector IP, far below the flood guard's 100 each second.
+  const failedTokens = new IpRateLimiter(2, 120);
   // No body parser: the SDK reads the body (capped at MAX_REQUEST_BODY_BYTES, as in the base
   // transport) only after the token checks below pass.
   app.all(ACCOUNT_MCP_PATH, async (req, res) => {
@@ -241,8 +244,14 @@ export async function createAccountApp(
     const authorization = req.headers.authorization;
     const value = authorization && authorization.length <= 4096 ? bearerToken(authorization) : undefined;
     if (!value) return challenge(401, 'invalid_token');
+    const ip = ipOf(req) ?? 'unknown';
+    // Any bearer value skips the per-IP limit above, so tokens that fail the check below are
+    // limited here, in memory: past the limit a made-up token costs no database round trip.
+    // Each check spends a token up front (concurrent requests cannot all pass) and a valid
+    // token gets it back.
+    if (!failedTokens.allow(ip)) return tooMany(res);
     // A flood guard sized for a connector's shared IP; the per-user limit below does the real work.
-    if (!(await store.allow(`mcp-ip:${ipOf(req)}`, 6000, 60))) return tooMany(res);
+    if (!(await store.allow(`mcp-ip:${ip}`, 6000, 60))) return tooMany(res);
     // Opaque tokens are checked against their hashed database row on every request, so
     // revocation, client disabling, user deletion and loss of email verification apply immediately.
     const context = await auth.$context;
@@ -268,6 +277,7 @@ export async function createAccountApp(
       }),
     ]);
     if (!client || client.disabled || !user?.emailVerified) return challenge(401, 'invalid_token');
+    failedTokens.refund(ip);
     if (!(token.scopes ?? []).includes('uspto:read')) return challenge(403, 'insufficient_scope');
     if (!(await store.allow(`mcp-user:${user.id}`, 600, 60))) return tooMany(res);
     const day = new Date().toISOString().slice(0, 10);

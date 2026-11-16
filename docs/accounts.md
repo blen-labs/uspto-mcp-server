@@ -138,6 +138,9 @@ The production server assumes one trusted proxy hop, as on Railway.
 - MCP request bodies are capped at 1 MiB.
 - Fixed limits: 600 requests/min per IP for browser traffic, 6000/min per IP on
   `/mcp/account`, 600/min per user on `/mcp/account`, 5 key checks/min per user.
+  Tokens that fail the check on `/mcp/account` are limited to 2/s per IP (bursts
+  of 120, in memory per process); past that, requests get 429 before any
+  database lookup.
   Behind a proxy, set `USPTO_CLIENT_IP_HEADER` (Railway: `x-real-ip`).
 - Browser state-changing requests require same-origin JSON; cookies are HttpOnly
   and SameSite, Secure in production. Responses are non-cacheable.

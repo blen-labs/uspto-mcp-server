@@ -426,6 +426,21 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     expect(await bucket('mcp-ip:203.0.113.5')).toBe(2);
     expect(await bucket('mcp-ip:198.51.100.7')).toBe(1);
   });
+  it('limits failed token checks per IP before they reach the database', async () => {
+    const bucket = async (key: string) => (await pool.query('SELECT count FROM request_limits WHERE bucket=$1', [digest(key)])).rows[0]?.count;
+    const post = (ip: string) => fetch(`${config.origin}/mcp/account`, { method: 'POST', headers: { authorization: 'Bearer made-up', 'x-real-ip': ip } });
+    const statuses = await Promise.all(Array.from({ length: 125 }, () => post('192.0.2.44').then(r => r.status)));
+    // Sent at once, so a check that charged only after the database lookup would let all through.
+    expect(statuses.filter(s => s === 401).length).toBeGreaterThanOrEqual(120);
+    expect(statuses.filter(s => s === 429).length).toBeGreaterThan(0);
+    // Refused before the flood guard's database upsert, so only requests the limiter let through
+    // reach the bucket. (Counted this way, not by expecting a 429 at once: the bucket refills
+    // 2 tokens a second, so on a slow runner the next request could legitimately pass.)
+    const counted = await bucket('mcp-ip:192.0.2.44');
+    const more = await Promise.all(Array.from({ length: 10 }, () => post('192.0.2.44').then(r => r.status)));
+    expect(await bucket('mcp-ip:192.0.2.44')).toBe(counted + more.filter(s => s === 401).length);
+    expect((await post('192.0.2.45')).status).toBe(401);
+  });
   it('serves documentation tools at /mcp without sign-in, and no execute or USPTO key there', async () => {
     const listTools = async (token?: string) => {
       const r = await fetch(`${config.origin}/mcp`, {

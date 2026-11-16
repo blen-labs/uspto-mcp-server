@@ -15,6 +15,14 @@ describe('IpRateLimiter', () => {
     expect(lim.allow('1.2.3.4')).toBe(true);
     expect(lim.allow('1.2.3.4')).toBe(false);
   });
+  it('refunds a spent token, up to burst', () => {
+    const lim = new IpRateLimiter(0, 1);
+    expect(lim.allow('1.2.3.4')).toBe(true);
+    lim.refund('1.2.3.4');
+    lim.refund('1.2.3.4');
+    expect(lim.allow('1.2.3.4')).toBe(true);
+    expect(lim.allow('1.2.3.4')).toBe(false);
+  });
   it('accepts a zero or extreme refill rate without an invalid cache ttl', () => {
     const lim = new IpRateLimiter(0, 1);
     expect(lim.allow('1.2.3.4')).toBe(true);
