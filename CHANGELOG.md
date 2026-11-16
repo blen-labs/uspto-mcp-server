@@ -11,6 +11,11 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 
 
 
+
+## [0.2.4] - 2026-11-16
+
+### Fixed
+- limit failed token checks per IP before the database (accounts)
 ## [0.2.3] - 2026-11-13
 
 ### Fixed
@@ -100,7 +105,8 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 - Docker image (Node 24 + Deno), an MCPB bundle (manifest v0.4) that prompts for keys, and
   third-party license notices in every artifact.
 
-[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.0...v0.2.1
