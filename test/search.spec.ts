@@ -22,6 +22,11 @@ describe('bm25', () => {
     expect(queryTokens('17/248,024')).toEqual(['17248024']);
     expect(queryTokens('rejected under 102/103, claims 1,2,3')).toEqual(['rejected', 'under', '102', '103', 'claim']);
     expect(tokenize('shows whats')).toEqual([]);
+    // Lists of statute sections are terms, however they are punctuated.
+    expect(queryTokens('101,102,103,112')).toEqual(['101', '102', '103', '112']);
+    expect(queryTokens('sections 35,102,103')).toEqual(['section', '35', '102', '103']);
+    // Two patent numbers back to back are still two identifiers.
+    expect(queryTokens('patents 10,169,987,11,646,472 and 9,876,543')).toEqual(['patent']);
   });
 
   it('scores relevant docs higher', () => {
@@ -68,11 +73,18 @@ describe('search_api tool', () => {
     ['Who petitioned to invalidate patent 8,000,000 and what was the outcome?', 'odp.ptab.proceedings.search'],
     ['Why was application 16/123,456 rejected by the examiner?', 'odp.officeActions.search'],
     ['Find all patents assigned to Acme Corp filed in 2023', 'odp.patents.search'],
+    // Statute lists, with either separator.
+    ['rejections under 101,102,103,112', 'odp.officeActions.search'],
+    ['rejected under 102/103', 'odp.officeActions.search'],
   ];
   it('finds the right method in the top 5 for typical questions', () => {
     const c = corpus();
     const misses = cases.filter(([query, id]) => !searchApi({ query, k: 5 }, c).hits.some(h => h.id === id));
     expect(misses).toEqual([]);
+  });
+
+  it('puts the search method first for a search by inventor name', () => {
+    expect(searchApi({ query: 'search patents by inventor name', k: 1 }, corpus()).hits[0]?.id).toBe('odp.patents.search');
   });
 });
 

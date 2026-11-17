@@ -113,7 +113,7 @@ _Generated from `schema/odp.json` and `schema/tsdr.json`; edit those, then run `
 
 #### `odp.patents.search(params: { q?, filters?, rangeFilters?, sort?, fields?, facets?, limit?, offset? } | q-string)`
 
-Search patent applications and granted patents (Patent File Wrapper) by keyword, invention title, inventor, applicant or owner (who a patent is assigned to), date filed or granted, CPC class, examiner, art unit, status or patent number. Each record holds applicationMetaData plus continuity, assignments, PTA, attorneys and transactions; use fields to return only what you need. Returns { count, patentFileWrapperDataBag: [...] }. Params: q, filters, rangeFilters, sort, fields, facets, limit, offset (see odp.syntax.search).
+Search patent applications and granted patents (Patent File Wrapper) by keyword, invention title, inventor name, applicant or owner name (who a patent is assigned to), date filed or granted, CPC class, examiner, art unit, status or patent number. Each record holds applicationMetaData plus continuity, assignments, PTA, attorneys and transactions; use fields to return only what you need. Returns { count, patentFileWrapperDataBag: [...] }. Params: q, filters, rangeFilters, sort, fields, facets, limit, offset (see odp.syntax.search).
 
 ```js
 await odp.patents.search({ q: 'applicationMetaData.inventionTitle:battery', rangeFilters: { 'applicationMetaData.filingDate': ['2024-01-01', '2024-03-31'] }, sort: 'applicationMetaData.filingDate desc', fields: ['applicationNumberText', 'applicationMetaData.inventionTitle', 'applicationMetaData.filingDate', 'applicationMetaData.patentNumber', 'applicationMetaData.applicationStatusDescriptionText'], facets: ['applicationMetaData.applicationTypeLabelName'], limit: 5 })

@@ -39,10 +39,12 @@ export function tokenize(s: string): string[] {
  * in the corpus and would outrank every real term. Short numbers ('103', '2024') stay.
  */
 export function queryTokens(query: string): string[] {
-  // Only the two identifier shapes are joined: '102/103' and 'claims 1,2,3' are not identifiers.
+  // Only the two identifier shapes are joined: a patent number written with commas (1,000,000 to
+  // 19,999,999) and an application number (17/248,024). '102/103', '101,102,103,112' and
+  // 'sections 35,102,103' are lists of statute sections, and those are real terms.
   const all = tokenize(query
-    .replace(/\b\d{1,3}(?:,\d{3})+\b/g, m => m.replace(/,/g, ''))
-    .replace(/\b(\d{2})\/(\d{6})\b/g, '$1$2'));
+    .replace(/\b(?:1\d|[1-9]),\d{3},\d{3}\b/g, m => m.replace(/,/g, ''))
+    .replace(/\b(\d{2})\/(\d{3}),?(\d{3})\b/g, '$1$2$3'));
   const terms = all.filter(t => !/^\d{5,}$/.test(t));
   // A query that is only an identifier keeps it: something is better than no hits.
   return terms.length ? terms : all;
