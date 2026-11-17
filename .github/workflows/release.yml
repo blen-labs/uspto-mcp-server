@@ -76,11 +76,14 @@ jobs:
         run: |
           npm pack --ignore-scripts
           node -e "const v=require('./package.json').version; if(!require('fs').existsSync('blen-uspto-mcp-server-'+v+'.tgz')) process.exit(1)"
-          # Every stamped line in the build (the x-release-version markers) carries the new version.
+          # Every x-release-version line in the build carries the new version, and the build has
+          # as many of those lines as the sources (tsc keeps the marker comments).
           v=$(node -p 'require("./package.json").version')
-          for f in dist/server/mcpServer.js dist/sdk/bindings.js; do
-            grep 'x-release-version' "$f" | grep -qF "'$v'" || { echo "::error::$f does not carry $v"; exit 1; }
-          done
+          built=$(grep -rh --include='*.js' 'x-release-version' dist || true)
+          [ "$(printf '%s' "$built" | grep -c .)" -eq "$(grep -rh 'x-release-version' src | grep -c .)" ] \
+            || { echo "::error::dist/ has a different number of x-release-version lines than src/"; exit 1; }
+          stale=$(printf '%s\n' "$built" | grep -vF "'$v'" || true)
+          [ -z "$stale" ] || { echo "::error::stamped lines without $v: $stale"; exit 1; }
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: npm-tarball
