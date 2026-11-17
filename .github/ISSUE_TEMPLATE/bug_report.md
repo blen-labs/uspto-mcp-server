@@ -29,7 +29,8 @@ labels: bug
 
 ## Logs
 
-<!-- Paste relevant log lines. Set USPTO_LOG_LEVEL=debug for more detail. -->
+<!-- Paste relevant log lines. Set USPTO_LOG_LEVEL=debug for more detail.
+     Remove API keys first, and names or addresses from USPTO responses. -->
 
 ```
 ```

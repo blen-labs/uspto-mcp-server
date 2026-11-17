@@ -208,7 +208,7 @@ User code is sandboxed by design — no network, filesystem, env, or subprocess 
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the dev setup and ground rules, and please open an issue before anything non-trivial. By participating you agree to the [Code of Conduct](./CODE_OF_CONDUCT.md).
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the dev setup and ground rules, and please open an issue before anything non-trivial. For questions and help, see [`SUPPORT.md`](./SUPPORT.md). By participating you agree to the [Code of Conduct](./CODE_OF_CONDUCT.md).
 
 ## License
 
