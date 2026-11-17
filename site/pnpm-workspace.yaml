@@ -6,3 +6,9 @@ allowBuilds:
 # its parent ships the fix.
 overrides:
   fflate@>=0.7.0 <0.7.5: ^0.7.5 # satori (og image render) -> GHSA-px8p-9vwx-vf98
+# Advisories with no patched release, in build-time packages only. Remove an entry once a fix ships.
+auditConfig:
+  ignoreGhsas:
+    # picomatch <= 4.0.7 ReDoS on crafted extglobs, through astro's own config and content globs
+    # at build time; the built site is static. Added 2026-11-17, when no fixed picomatch existed.
+    - GHSA-fc5q-39xc-vjpf
