@@ -1,4 +1,5 @@
 import { Keyring } from './crypto.js';
+import { loadClaudeLinkConfig, type ClaudeLinkConfig } from './claudeLink.js';
 
 export interface AccountConfig {
   origin: string;
@@ -18,6 +19,8 @@ export interface AccountConfig {
   allowedOrigins?: string[];
   /** Built documentation site served at /docs. Not configurable by env: the image puts it at docs-site/; tests point it at a fixture. */
   docsRoot?: string;
+  /** Linked Claude billing (USPTO_CLAUDE_LINK_*); off when USPTO_CLAUDE_LINK_CLIENT_ID is unset. */
+  claudeLink?: ClaudeLinkConfig;
 }
 
 /** `env` is passed in by src/bin.ts, the only module that reads process.env. */
@@ -57,6 +60,7 @@ export function loadAccountConfig(env: Record<string, string | undefined>): Acco
     ipRps: Number.isFinite(ipRps) && ipRps > 0 ? ipRps : 5,
     ipBurst: Number.isFinite(ipBurst) && ipBurst >= 1 ? ipBurst : 20,
     origin: origin.origin, production, authSecret,
+    claudeLink: loadClaudeLinkConfig(env, origin.origin),
     databaseUrl: required('DATABASE_URL'),
     googleClientId: required('GOOGLE_CLIENT_ID'),
     googleClientSecret: required('GOOGLE_CLIENT_SECRET'),
