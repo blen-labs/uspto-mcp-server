@@ -20,7 +20,7 @@ labels: bug
 
 ## Environment
 
-- Server version: <!-- pnpm view @blen/uspto-mcp-server version, or git SHA -->
+- Server version: <!-- the version your MCP client shows for uspto-mcp-server, or git SHA; npm view shows the newest release, not the one you run -->
 - Transport: <!-- stdio | http -->
 - Sandbox runner: <!-- isolate | deno | unavailable -->
 - Node: <!-- node -v -->

@@ -7,5 +7,5 @@ contact_links:
     url: https://uspto.mcp.blenlabs.com/docs/
     about: Connect guides, key setup, recipes and the SDK reference. Check here before you open an issue.
   - name: USPTO account or API key problems
-    url: https://data.uspto.gov/support/universal-registration
-    about: Registration, ID.me verification and key activation are handled by USPTO, not by this project.
+    url: https://uspto.mcp.blenlabs.com/docs/keys/
+    about: USPTO handles registration, ID.me verification and both API keys, not this project. This page gives the USPTO page for each one.
