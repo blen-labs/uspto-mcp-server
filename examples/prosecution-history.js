@@ -1,6 +1,6 @@
 // One application's prosecution story: resolve a patent number, then pull its office
 // actions (current Office Action Search API) and the rejection grounds raised in each.
-const found = await odp.patents.byPatentNumber('11,646,472', { fields: ['applicationNumberText', 'applicationMetaData.inventionTitle'] });
+const found = await odp.patents.byPatentNumber('10,169,987', { fields: ['applicationNumberText', 'applicationMetaData.inventionTitle'] });
 const app = found.patentFileWrapperDataBag?.[0];
 if (!app) return { error: 'patent not found' };
 const actions = await odp.officeActions.search({

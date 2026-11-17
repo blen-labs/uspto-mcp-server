@@ -157,7 +157,8 @@ export class DenoRunner implements SandboxRunner {
               : `The sandbox exited unexpectedly (code ${code}).` } });
         };
         // V8 says why it aborted on stderr, and the exit event can come before that text is read.
-        if (killedBy && !settled && !child.stderr.readableEnded) child.stderr.once('end', finish);
+        // 'close' and not 'end': a stream that fails still closes, so the result is never held back.
+        if (!settled && code !== MEMORY_EXIT_CODE && !child.stderr.closed) child.stderr.once('close', finish);
         else finish();
       });
       if (signal?.aborted) return onAbort();
@@ -245,7 +246,7 @@ export class DenoRunner implements SandboxRunner {
       child.stderr.on('data', (chunk: string) => {
         const text = stderrTail + chunk;
         // V8 names a heap-limit abort before its stack trace, which can push that line out of the tail.
-        if (V8_OUT_OF_MEMORY.test(text)) heapExhausted = true;
+        if (!heapExhausted && V8_OUT_OF_MEMORY.test(text)) heapExhausted = true;
         stderrTail = text.slice(-2000);
       });
       child.stdin.on('error', () => { /* child exited; exit handler settles */ });

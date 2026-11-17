@@ -62,8 +62,8 @@ await odp.patents.search({
   digits, `-`, `_` and `.`, starting with a letter or digit — exactly as the API
   returns them. Anything else (for example `..`) throws `TypeError` before any
   request.
-- **Office-action rejection grounds** (`rejectionTypeBag`) are statute sections as
-  strings: `'101'`, `'102'`, `'103'`, `'112'`.
+- **Office-action rejection grounds** (`rejectionTypeBag`) are strings: the statute
+  sections `'101'`, `'102'`, `'103'`, `'112'`, plus `'DoublePatent'` and `'Other'`.
 
 ## Errors
 
@@ -87,7 +87,8 @@ with `isError: true`. Use `try/catch` to handle it inline.
 
 Execution-level errors (in the `execute` result, not thrown by SDK calls):
 `ResultTooLarge` (the returned value is over 256 KiB — return less), `CodeTooLarge`
-(over 256 KiB of code), `TimeoutError`, `AbortError` (the client cancelled or the
+(over 256 KiB of code), `TimeoutError`, `MemoryLimitExceeded` (the program outgrew
+`memoryMb` — request fewer records or work in smaller steps), `AbortError` (the client cancelled or the
 server is shutting down), `Busy` (too many executions running), `PolicyError`
 (the code uses a banned construct, or TypeScript syntax), and `SandboxUnavailable`.
 Logs are capped at 64 KiB / 1,000 lines (`[logs truncated]`).
@@ -112,7 +113,7 @@ _Generated from `schema/odp.json` and `schema/tsdr.json`; edit those, then run `
 
 #### `odp.patents.search(params: { q?, filters?, rangeFilters?, sort?, fields?, facets?, limit?, offset? } | q-string)`
 
-Search patent applications and granted patents (Patent File Wrapper) by keyword, invention title, inventor, applicant, filing or grant date, CPC class, examiner, art unit, status or patent number. Each record holds applicationMetaData plus continuity, assignments, PTA, attorneys and transactions; use fields to return only what you need. Returns { count, patentFileWrapperDataBag: [...] }. Params: q, filters, rangeFilters, sort, fields, facets, limit, offset (see odp.syntax.search).
+Search patent applications and granted patents (Patent File Wrapper) by keyword, invention title, inventor name, applicant or owner name (who a patent is assigned to), date filed or granted, CPC class, examiner, art unit, status or patent number. Each record holds applicationMetaData plus continuity, assignments, PTA, attorneys and transactions; use fields to return only what you need. Returns { count, patentFileWrapperDataBag: [...] }. Params: q, filters, rangeFilters, sort, fields, facets, limit, offset (see odp.syntax.search).
 
 ```js
 await odp.patents.search({ q: 'applicationMetaData.inventionTitle:battery', rangeFilters: { 'applicationMetaData.filingDate': ['2024-01-01', '2024-03-31'] }, sort: 'applicationMetaData.filingDate desc', fields: ['applicationNumberText', 'applicationMetaData.inventionTitle', 'applicationMetaData.filingDate', 'applicationMetaData.patentNumber', 'applicationMetaData.applicationStatusDescriptionText'], facets: ['applicationMetaData.applicationTypeLabelName'], limit: 5 })
@@ -218,7 +219,7 @@ await odp.patents.statusCodes({ q: 'applicationStatusDescriptionText:abandoned',
 
 #### `odp.ptab.proceedings.search(params: { q?, filters?, rangeFilters?, sort?, fields?, facets?, limit?, offset? } | q-string)`
 
-Search PTAB AIA trial proceedings, where a petitioner challenged a granted patent (IPR inter partes review, PGR post-grant review, CBM, DER): trialNumber, trialMetaData (trialTypeCode, trialStatusCategory, petitionFilingDate, institutionDecisionDate, terminationDate), patentOwnerData (patentNumber, applicationNumberText, technology center), regularPetitionerData (realPartyInInterestName, counselName). Returns { count, patentTrialProceedingDataBag: [...] }. Params: q, filters, rangeFilters, sort, fields, facets, limit, offset (see odp.syntax.search).
+Search PTAB AIA trial proceedings, where a petitioner challenged a granted patent, i.e. petitioned to invalidate it (IPR inter partes review, PGR post-grant review, CBM, DER): trialNumber, trialMetaData (trialTypeCode, trialStatusCategory, petitionFilingDate, institutionDecisionDate, terminationDate), patentOwnerData (patentNumber, applicationNumberText, technology center), regularPetitionerData (realPartyInInterestName, counselName). Returns { count, patentTrialProceedingDataBag: [...] }. Params: q, filters, rangeFilters, sort, fields, facets, limit, offset (see odp.syntax.search).
 
 ```js
 await odp.ptab.proceedings.search({ q: 'patentOwnerData.patentNumber:9876543', fields: ['trialNumber', 'trialMetaData.trialTypeCode', 'trialMetaData.trialStatusCategory', 'trialMetaData.petitionFilingDate', 'regularPetitionerData.realPartyInInterestName'] })
@@ -358,7 +359,7 @@ const s = await odp.petitions.search({ fields: ['petitionDecisionRecordIdentifie
 
 #### `odp.officeActions.search(params: { q?, filters?, rangeFilters?, sort?, fields?, facets?, limit?, offset? } | q-string)`
 
-Search office actions (full text) issued by examiners for public applications filed 2001+: applicationNumberText, documentCode (CTNF non-final, CTFR final, CTRS restriction, NOA...), documentCodeDescriptionText, submissionDate, groupArtUnitNumber, patentNumber, rejectionTypeBag (rejection grounds as statute sections: '101', '102', '103', '112'), officeActionText, officeActionRecordIdentifier. This is the current Office Action Search API; prefer it over the legacy odp.oa.* DSAPI endpoints. Returns { count, officeActionDataBag: [...] }. Params: q, filters, rangeFilters, sort, fields, facets, limit, offset (see odp.syntax.search).
+Search office actions (full text) issued by examiners, which say why an application was rejected, for public applications filed 2001+: applicationNumberText, documentCode (CTNF non-final, CTFR final, CTRS restriction, NOA...), documentCodeDescriptionText, submissionDate, groupArtUnitNumber, patentNumber, rejectionTypeBag (rejection grounds: '101', '102', '103', '112', 'DoublePatent', 'Other'), officeActionText, officeActionRecordIdentifier. This is the current Office Action Search API; prefer it over the legacy odp.oa.* DSAPI endpoints. Returns { count, officeActionDataBag: [...] }. Params: q, filters, rangeFilters, sort, fields, facets, limit, offset (see odp.syntax.search).
 
 ```js
 await odp.officeActions.search({ q: 'documentCode:CTNF AND rejectionTypeBag:103', fields: ['officeActionRecordIdentifier', 'applicationNumberText', 'submissionDate', 'rejectionTypeBag'], sort: 'submissionDate desc', limit: 10 })

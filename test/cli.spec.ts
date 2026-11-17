@@ -23,6 +23,8 @@ describe('command line', () => {
     const r = bin('--help');
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('--sandbox auto|isolate|deno');
+    // `pnpm dev -- --help` hands the separator on.
+    expect(bin('--', '--help').status).toBe(0);
   });
 
   // The default User-Agent is what USPTO sees of a deployment: it must name the real release.

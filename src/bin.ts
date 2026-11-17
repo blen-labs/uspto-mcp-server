@@ -45,6 +45,8 @@ function parseArgs(argv: string[]): CliArgs {
       printHelp();
       process.exit(0);
     }
+    // The separator some runners pass through (`pnpm dev -- --http`).
+    else if (a === '--') continue;
     // A mistyped --http must not quietly start the stdio transport instead.
     else throw new Error(`Unknown option '${a}'. Run with --help to see the options.`);
   }
