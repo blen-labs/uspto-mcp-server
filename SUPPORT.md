@@ -20,7 +20,7 @@ USPTO. Help is given on a best-effort basis by the maintainers.
 |---|---|
 | A bug, or behaviour that differs from the docs | [Open a bug report](https://github.com/blen-labs/uspto-mcp-server/issues/new?template=bug_report.md) |
 | An idea for a new SDK method, tool argument or setting | [Open a feature request](https://github.com/blen-labs/uspto-mcp-server/issues/new?template=feature_request.md) |
-| A question about using or hosting the server | [Open an issue](https://github.com/blen-labs/uspto-mcp-server/issues/new) and say it is a question |
+| A question about using or hosting the server | [Ask a question](https://github.com/blen-labs/uspto-mcp-server/issues/new?template=question.md) |
 | A security vulnerability (sandbox escape, auth bypass, key leak) | A [private security advisory](https://github.com/blen-labs/uspto-mcp-server/security/advisories/new). See [`SECURITY.md`](./SECURITY.md). Never a public issue. |
 | A problem with your USPTO.gov account, ID.me verification or API key | USPTO: [Register for ODP access](https://data.uspto.gov/support/universal-registration), [Manage API Key](https://data.uspto.gov/apikey) for the ODP key, and the [API Key Manager](https://account.uspto.gov/api-manager) for the TSDR key. This project cannot see or change your account. |
 | A question about the BLEN-hosted service, its terms or your data | **opensource@blencorp.com**. See the [Terms of Service](./legal/terms.md) and [Privacy Policy](./legal/privacy-policy.md). |
