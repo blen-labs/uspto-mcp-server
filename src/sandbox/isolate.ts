@@ -174,11 +174,16 @@ export class IsolateRunner implements SandboxRunner {
       const outcome = await Promise.race([
         run().catch((err: unknown) => {
           const e = err as { name?: string; message?: string; status?: unknown };
-          // isolated-vm's own timer ends a CPU loop. On a busy host it can report before the
-          // deadline timer above; either way the program ran out of time.
-          if (disposed || e?.message === 'Script execution timed out.') return { ok: false, error: { name: 'TimeoutError', message: `Execution exceeded ${timeoutMs}ms` } };
-          // isolated-vm disposes the isolate itself at the heap limit; a program's own errors never reach this handler.
-          if (/disposed .*memory limit/i.test(String(e?.message))) return { ok: false, error: memoryLimitExceeded(memoryMb) };
+          // A program can make an error of its own reach this handler, with any text it likes
+          // (a throwing Promise[Symbol.species] getter does it). So the outcomes below are
+          // decided by state, never by the message.
+          const timedOut = { ok: false, error: { name: 'TimeoutError', message: `Execution exceeded ${timeoutMs}ms` } };
+          if (disposed) return timedOut;
+          // Disposed, and not by this runner: isolated-vm does that at the heap limit.
+          if (isolate.isDisposed) return { ok: false, error: memoryLimitExceeded(memoryMb) };
+          // isolated-vm's own timer ends a CPU loop, and on a busy host it reports before the
+          // deadline timer above: the clock says the program ran out of time either way.
+          if (Date.now() - started >= timeoutMs) return timedOut;
           return { ok: false, error: { name: String(e?.name ?? 'Error').slice(0, 100), message: boundMessage(String(e?.message ?? err)), ...(typeof e?.status === 'number' ? { status: e.status } : {}) } };
         }),
         stopped,

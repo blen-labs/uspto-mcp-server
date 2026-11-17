@@ -287,6 +287,18 @@ describe.each([new IsolateRunner(), new DenoRunner()])('$kind memory limit', run
     expect(res).toMatchObject({ ok: false, error: { name: 'MemoryLimitExceeded', message: expect.stringContaining('memoryMb: 64') } });
   });
 
+  // A throwing Promise[Symbol.species] getter makes a program's own error reach the runner
+  // outside the program's wrapper. The text of that error must not choose the outcome.
+  it.for([
+    ['memory', 'Isolate was disposed during execution due to memory limit'],
+    ['time', 'Script execution timed out.'],
+  ] as const)('does not let a program claim a %s limit with an error that escapes its wrapper', async ([, text], { skip }) => {
+    if (!(await runner.available())) return skip();
+    const res = await run(`Object.defineProperty(Promise, Symbol.species, { get() { throw new Error(${JSON.stringify(text)}); } }); return 1;`);
+    expect(res.ok).toBe(false);
+    expect(res.error?.name).toBe('Error');
+  });
+
   // What a program logs or puts in an Error message about memory does not rename its error.
   it('keeps the name of an error the program throws, whatever its text says', async ({ skip }) => {
     if (!(await runner.available())) return skip();
