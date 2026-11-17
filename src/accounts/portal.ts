@@ -217,6 +217,8 @@ export function installPortal(
     if (!claude) return error(res, 404, 'Not found.');
     const owner = personalOwner(logged.user.id);
     if (!await store.allow(`claude-link:${owner}`, 5, 60)) return error(res, 429, 'Too many attempts. Try again in one minute.');
+    // A second connection would replace the first without revoking it, leaving it billable at Anthropic.
+    if ((await claude.status(owner)).linked) return error(res, 409, 'Your Claude organization is already linked. Unlink it first.');
     try { res.json({ url: await claude.start(owner, logged.session.id) }); }
     catch { error(res, 502, 'Claude could not start the link. Try again later.'); }
   });

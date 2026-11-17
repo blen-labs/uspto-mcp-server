@@ -61,12 +61,10 @@ export function loadClaudeLinkConfig(env: Record<string, string | undefined>, or
     return value;
   };
   if (!ID.test(clientId)) throw new Error('Invalid USPTO_CLAUDE_LINK_CLIENT_ID');
+  const rawKey = required('USPTO_CLAUDE_LINK_SIGNING_JWK');
   let signingKey: JWK;
-  try { signingKey = JSON.parse(required('USPTO_CLAUDE_LINK_SIGNING_JWK')) as JWK; }
-  catch (error) {
-    if (String(error).includes('Missing configuration')) throw error;
-    throw new Error('USPTO_CLAUDE_LINK_SIGNING_JWK must be a JSON Web Key');
-  }
+  try { signingKey = JSON.parse(rawKey) as JWK; }
+  catch { throw new Error('USPTO_CLAUDE_LINK_SIGNING_JWK must be a JSON Web Key'); }
   if (signingKey?.kty !== 'EC' || signingKey.crv !== 'P-256' || typeof signingKey.d !== 'string' || typeof signingKey.kid !== 'string') {
     throw new Error('USPTO_CLAUDE_LINK_SIGNING_JWK must be a private P-256 JWK with a kid');
   }
@@ -100,7 +98,8 @@ export class ClaudeLink {
 
   /** A new single-use assertion for every request: never cached, never reused on a retry. */
   private async assertion(subject: string, audience: string) {
-    this.key ??= importJWK(this.config.signingKey, 'ES256');
+    // A failed import is not cached: the next request tries again (and fails the same way, visibly).
+    this.key ??= importJWK(this.config.signingKey, 'ES256').catch(error => { this.key = undefined; throw error; });
     const now = Math.floor(Date.now() / 1000);
     return new SignJWT({})
       .setProtectedHeader({ alg: 'ES256', kid: this.config.signingKey.kid!, typ: 'JWT' })
@@ -147,8 +146,8 @@ export class ClaudeLink {
       service_account_id: this.config.serviceAccountId,
       workspace_id: this.config.workspaceId,
     });
-    const token = r.body.access_token, expiresIn = Number(r.body.expires_in);
-    if (r.status !== 200 || typeof token !== 'string' || !Number.isFinite(expiresIn)) this.fail('operator_token', r);
+    const token = r.body.access_token, expiresIn = r.body.expires_in;
+    if (r.status !== 200 || typeof token !== 'string' || typeof expiresIn !== 'number' || !(expiresIn > 0)) this.fail('operator_token', r);
     this.operator = { token, expiresAt: Date.now() + expiresIn * 1000 };
     return token;
   }
@@ -215,20 +214,30 @@ export class ClaudeLink {
     const connectionId = r.body.connection_id;
     const tokens = this.tokens(r);
     if (r.status !== 200 || typeof connectionId !== 'string' || !tokens) { this.report('code_exchange', r); return 'failed'; }
-    await this.store.withClaudeLink(owner, async (_row, save) => { await save({ connectionId, tokens }); });
+    // Two links started before either finished: the newer connection replaces the older one,
+    // which is then revoked so it does not stay billable at Anthropic with no way to end it here.
+    const replaced = await this.store.withClaudeLink(owner, async (row, save) => {
+      await save({ connectionId, tokens });
+      return row?.connectionId && row.connectionId !== connectionId ? row.connectionId : undefined;
+    });
     await this.store.audit(owner, owner, 'claude.link.created');
+    if (replaced) {
+      const revoked = await this.post(`${AUTH_ORIGIN}/v1/oauth/revoke`, { connection_id: replaced, ...await this.clientAuth() }).catch(() => undefined);
+      if (revoked?.status !== 200) log.warn('account.claude_link_failed', { step: 'revoke_replaced', ...(revoked ? { status: revoked.status } : {}) });
+    }
     return 'linked';
   }
 
   private tokens(r: JsonResponse): ClaudeTokens | undefined {
     const { access_token, refresh_token, expires_in, refresh_token_expires_in } = r.body;
-    if (typeof access_token !== 'string' || !Number.isFinite(Number(expires_in))) return undefined;
+    // Numbers only: Number(null) would read a missing lifetime as an already-expired token.
+    if (typeof access_token !== 'string' || typeof expires_in !== 'number' || !(expires_in > 0)) return undefined;
     const now = Date.now();
     return {
-      accessToken: access_token, accessExpiresAt: now + Number(expires_in) * 1000,
+      accessToken: access_token, accessExpiresAt: now + expires_in * 1000,
       ...(typeof refresh_token === 'string' ? {
         refreshToken: refresh_token,
-        ...(Number.isFinite(Number(refresh_token_expires_in)) ? { refreshExpiresAt: now + Number(refresh_token_expires_in) * 1000 } : {}),
+        ...(typeof refresh_token_expires_in === 'number' && refresh_token_expires_in > 0 ? { refreshExpiresAt: now + refresh_token_expires_in * 1000 } : {}),
       } : {}),
     };
   }
@@ -243,16 +252,20 @@ export class ClaudeLink {
    * next link). If Anthropic can't be reached, nothing is forgotten and the user can try again.
    */
   async unlink(owner: string): Promise<boolean> {
-    return this.store.withClaudeLink(owner, async (row, save) => {
+    let revoked = false;
+    const ok = await this.store.withClaudeLink(owner, async (row, save) => {
       if (!row?.connectionId) return true;
       const r = await this.post(`${AUTH_ORIGIN}/v1/oauth/revoke`, { connection_id: row.connectionId, ...await this.clientAuth() })
         .catch(() => undefined);
       // An empty revoked_connection_ids means it had already ended: that is success too.
       if (!r || r.status !== 200) { if (r) this.report('revoke', r); return false; }
       await save({ connectionId: null, tokens: null });
-      await this.store.audit(owner, owner, 'claude.link.revoked');
+      revoked = true;
       return true;
     });
+    // Audited after the lock is released: inside it, each caller would hold one pooled connection while waiting for a second.
+    if (revoked) await this.store.audit(owner, owner, 'claude.link.revoked');
+    return ok;
   }
 
   /**
@@ -261,7 +274,8 @@ export class ClaudeLink {
    * not linked, or when Anthropic says the connection is gone (the user must link again).
    */
   async accessToken(owner: string): Promise<{ token: string; userProfileId: string } | undefined> {
-    return this.store.withClaudeLink(owner, async (row, save) => {
+    let expired = false;
+    const result = await this.store.withClaudeLink(owner, async (row, save) => {
       if (!row?.tokens) return undefined;
       const { tokens } = row;
       if (tokens.accessExpiresAt - REFRESH_MARGIN_MS > Date.now()) return { token: tokens.accessToken, userProfileId: row.userProfileId };
@@ -269,14 +283,17 @@ export class ClaudeLink {
         await save({ connectionId: null, tokens: null });
         return undefined;
       }
-      // No `scope` on a refresh. One attempt only: a lost response may be repeated within 30 s,
-      // but a later repeat ends the connection, so this path never retries by itself.
-      const r = await this.post(`${AUTH_ORIGIN}/v1/oauth/token`, {
+      // No `scope` on a refresh. Anthropic rotates the refresh token on use: a replaced token may be
+      // sent once more within 30 s to repeat a request whose response was lost, but a later repeat
+      // ends the connection. So only a lost response (timeout, network error) is repeated, at once
+      // and once; an answered request never is.
+      const refresh = async () => this.post(`${AUTH_ORIGIN}/v1/oauth/token`, {
         grant_type: 'refresh_token', refresh_token: tokens.refreshToken, ...await this.clientAuth(),
       });
+      const r = await refresh().catch(() => refresh());
       if (r.status === 400 && r.body.error === 'invalid_grant') {
         await save({ connectionId: null, tokens: null });
-        await this.store.audit(owner, 'service-operator', 'claude.link.expired');
+        expired = true;
         return undefined;
       }
       const next = this.tokens(r);
@@ -284,5 +301,8 @@ export class ClaudeLink {
       await save({ tokens: { ...next, refreshToken: next.refreshToken ?? tokens.refreshToken, refreshExpiresAt: next.refreshExpiresAt ?? tokens.refreshExpiresAt } });
       return { token: next.accessToken, userProfileId: row.userProfileId };
     });
+    // Audited after the lock is released (see unlink).
+    if (expired) await this.store.audit(owner, 'service-operator', 'claude.link.expired');
+    return result;
   }
 }

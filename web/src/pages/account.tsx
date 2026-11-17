@@ -102,6 +102,12 @@ const CLAUDE_RESULTS: Record<string, { kind: 'success' | 'error'; text: string }
 function ClaudeCard({ status, onChanged }: { status: ClaudeLinkStatus; onChanged: (notice: string) => void }) {
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  // Coming back with the browser's Back button restores this page as it was left: re-enable it.
+  useEffect(() => {
+    const restored = (e: PageTransitionEvent) => { if (e.persisted) setBusy(false); };
+    window.addEventListener('pageshow', restored);
+    return () => window.removeEventListener('pageshow', restored);
+  }, []);
   async function link() {
     setBusy(true);
     setError(undefined);

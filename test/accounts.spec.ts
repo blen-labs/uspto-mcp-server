@@ -703,8 +703,9 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     expect(JSON.stringify(profile.body)).not.toContain('alice');
     const row = await pool.query('SELECT ciphertext::text AS sealed FROM claude_links WHERE owner=$1', [personalOwner(alice.id)]);
     expect(row.rows[0].sealed).not.toMatch(/at-|rt-/);
-    // Only same-origin JSON may start or end a link.
+    // Only same-origin JSON may start or end a link, and a linked user must unlink first.
     expect((await send(browser, '/api/portal/claude/link', {}, 'https://evil.example')).status).toBe(403);
+    expect((await send(browser, '/api/portal/claude/link', {})).status).toBe(409);
   });
   it('refreshes Claude tokens once under the lock, and forgets a connection Claude ended', async () => {
     const link = new ClaudeLink(claudeConfig, store, claudeFetch);
@@ -722,13 +723,31 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     expect(a?.token).not.toBe(first?.token);
     expect(claude.calls.filter(c => c.body.grant_type === 'refresh_token').every(c => !('scope' in c.body))).toBe(true);
     expect((await link.accessToken(owner))?.token).toBe(a?.token);
+    // A refresh whose response is lost is repeated once at once, with the same refresh token, and the link survives.
+    claude.loseNextRefresh = true;
+    await store.withClaudeLink(owner, async (row, save) => save({ tokens: { ...row!.tokens!, accessExpiresAt: 0 } }));
+    const sent = refreshes();
+    const repeated = await link.accessToken(owner);
+    expect(refreshes()).toBe(sent + 2);
+    expect(repeated?.token).toMatch(/^at-/);
+    expect(await claudeStatus(browser)).toMatchObject({ linked: true });
     // The customer unlinked in their own Console: the next refresh gets invalid_grant, and the link is forgotten.
     claude.endConnections();
     await store.withClaudeLink(owner, async (row, save) => save({ tokens: { ...row!.tokens!, accessExpiresAt: 0 } }));
     expect(await link.accessToken(owner)).toBeUndefined();
     expect(await claudeStatus(browser)).toMatchObject({ linked: false });
   });
+  it('revokes the older connection when two links started earlier both finish', async () => {
+    const first = await startLink(other), second = await startLink(other);
+    expect(await finishLink(other, first)).toBe('/account?claude=linked');
+    const replaced = (await pool.query('SELECT connection_id FROM claude_links WHERE owner=$1', [personalOwner(bob.id)])).rows[0].connection_id;
+    expect(await finishLink(other, second)).toBe('/account?claude=linked');
+    expect(claude.calls.at(-1)).toMatchObject({ url: 'https://auth.claude.com/v1/oauth/revoke', body: { connection_id: replaced } });
+    expect((await send(other, '/api/portal/claude/unlink', {})).status).toBe(200);
+  });
   it('unlinks at Claude, keeps the user profile, and links again without a new one', async () => {
+    await pool.query('DELETE FROM request_limits'); // the earlier tests used up Alice's 5 link attempts a minute
+    const profiles = claude.profilesCreated;
     expect(await finishLink(browser, await startLink(browser))).toBe('/account?claude=linked');
     const revokes = claude.count('/v1/oauth/revoke');
     const unlinked = await send(browser, '/api/portal/claude/unlink', {});
@@ -737,7 +756,7 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     expect(claude.calls.at(-1)!.body.connection_id).toMatch(/^ocon_/);
     expect(await claudeStatus(browser)).toMatchObject({ linked: false });
     expect(await finishLink(browser, await startLink(browser))).toBe('/account?claude=linked');
-    expect(claude.profilesCreated).toBe(1);
+    expect(claude.profilesCreated).toBe(profiles);
     const audit = await pool.query("SELECT action FROM audit_events WHERE tenant=$1 AND action LIKE 'claude.link.%' ORDER BY id", [personalOwner(alice.id)]);
     expect(audit.rows.map(r => r.action)).toEqual(['claude.link.created', 'claude.link.expired', 'claude.link.created', 'claude.link.revoked', 'claude.link.created']);
   });

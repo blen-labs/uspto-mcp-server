@@ -17,6 +17,7 @@ export class FakeClaude {
   private requests = new Map<string, { state: string; challenge: string; profile: string }>();
   private codes = new Map<string, { challenge: string; profile: string }>();
   private refresh = new Map<string, string>(); // refresh token -> connection id
+  private replaced = new Map<string, string>(); // used once, may be repeated once
   private n = 0;
   constructor(private readonly config: ClaudeLinkConfig, private readonly publicKey: Parameters<typeof jwtVerify>[1]) {}
 
@@ -36,8 +37,10 @@ export class FakeClaude {
     this.codes.set(code, { challenge: request.challenge, profile: request.profile });
     return { code, state: request.state };
   }
+  /** The next refresh is processed (the token rotates) but its response never arrives. */
+  loseNextRefresh = false;
   /** Makes every current refresh token invalid, as when the customer unlinks in their Console. */
-  endConnections() { this.refresh.clear(); }
+  endConnections() { this.refresh.clear(); this.replaced.clear(); }
 
   private async assertion(token: unknown, subject: string, audience: string) {
     if (typeof token !== 'string') throw new Error('missing assertion');
@@ -112,10 +115,15 @@ export class FakeClaude {
         }
         if (body.grant_type === 'refresh_token') {
           if ('scope' in body) return json(400, { error: 'invalid_scope' });
-          const connection = this.refresh.get(String(body.refresh_token));
+          const sent = String(body.refresh_token);
+          const connection = this.refresh.get(sent) ?? this.replaced.get(sent);
           if (!connection) return json(400, { error: 'invalid_grant' });
-          this.refresh.delete(String(body.refresh_token));
-          return json(200, this.tokens(connection, false));
+          // A replaced token is accepted once more (Anthropic: within 30 s), then never again.
+          if (!this.refresh.delete(sent)) this.replaced.delete(sent);
+          else this.replaced.set(sent, connection);
+          const answer = json(200, this.tokens(connection, false));
+          if (this.loseNextRefresh) { this.loseNextRefresh = false; throw new TypeError('fetch failed'); }
+          return answer;
         }
         return json(400, { error: 'unsupported_grant_type' });
       }
