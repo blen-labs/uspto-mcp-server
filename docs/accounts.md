@@ -182,15 +182,21 @@ or Billing member of the user's Claude organization approves and sets a monthly 
 limit. `GET /api/portal/claude/callback` consumes the state (single use, ten minutes) and
 accepts it only for the same signed-in user and browser session that started it, before
 anything is sent to Anthropic; the result returns to `/account?claude=<result>` as a fixed
-code. `POST /api/portal/claude/unlink` revokes the connection at Anthropic and then forgets
-its tokens (if Anthropic can't be reached, nothing changes). `GET /api/portal/claude`
+code. A user who is already linked must unlink first (409); if two links started earlier both
+finish, the newer connection replaces the older one, whose ID is stored with it until its
+revocation succeeds. `POST /api/portal/claude/unlink` revokes by user profile (every
+connection of the app on it, so a replaced one too) and then forgets the tokens; if
+Anthropic can't be reached, nothing changes. `GET /api/portal/claude`
 returns `{ enabled, linked, linkedAt? }`.
 
 **Tokens.** Sealed in `claude_links` (AES-GCM, context `claude-link:<owner>`; pending
 verifiers use `claude-link-pending:<owner>`). Every request to Anthropic carries a new
-two-minute assertion with a unique `jti`. A refresh runs once, with no retries and no
-`scope`, under a per-owner PostgreSQL lock, and the new pair is stored before use;
-`invalid_grant` forgets the connection (the user links again). Audit actions:
+two-minute assertion with a unique `jti`. A refresh carries no `scope` and runs under a
+per-owner PostgreSQL lock; the new pair is stored before use. Only a lost response (timeout,
+network error, a body that never arrives) is repeated, once and at once, as Anthropic allows
+within 30 seconds. `invalid_grant` forgets the connection (the user links again). A crash
+between Anthropic's answer and the commit leaves the replaced refresh token, so the next
+refresh ends the connection at Anthropic and the user links again; nothing stays billable. Audit actions:
 `claude.link.created`, `.revoked`, `.expired`.
 
 **Limits.** 5 link attempts per minute per user. A user who unlinks in their own Claude

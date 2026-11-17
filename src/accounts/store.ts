@@ -16,8 +16,8 @@ export interface KeyStatus { connected: boolean; updatedAt?: Date }
 
 /** A linked Claude connection's OAuth tokens (sealed at rest; see claudeLink.ts). Times are epoch ms. */
 export interface ClaudeTokens { accessToken: string; accessExpiresAt: number; refreshToken?: string; refreshExpiresAt?: number }
-export interface ClaudeLinkRow { userProfileId: string; connectionId: string | null; tokens?: ClaudeTokens }
-export type ClaudeLinkChanges = { userProfileId?: string; connectionId?: string | null; tokens?: ClaudeTokens | null };
+export interface ClaudeLinkRow { userProfileId: string; connectionId: string | null; staleConnectionIds: string[]; tokens?: ClaudeTokens }
+export type ClaudeLinkChanges = { userProfileId?: string; connectionId?: string | null; staleConnectionIds?: string[]; tokens?: ClaudeTokens | null };
 /** Encryption contexts: a ciphertext opens only for its own owner and purpose, never as a USPTO key. */
 const claudeContext = (owner: string) => `claude-link:${owner}`;
 const claudePendingContext = (owner: string) => `claude-link-pending:${owner}`;
@@ -57,6 +57,7 @@ export class Store {
       );
       CREATE TABLE IF NOT EXISTS claude_links (
         owner TEXT PRIMARY KEY, user_profile_id TEXT NOT NULL, connection_id TEXT,
+        stale_connection_ids TEXT[] NOT NULL DEFAULT '{}',
         ciphertext JSONB, updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
       CREATE TABLE IF NOT EXISTS claude_link_pending (
@@ -148,10 +149,10 @@ export class Store {
       await client.query('BEGIN');
       await client.query("SET LOCAL lock_timeout = '15s'");
       await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`claude-link:${owner}`]);
-      const result = await client.query('SELECT user_profile_id,connection_id,ciphertext FROM claude_links WHERE owner=$1', [owner]);
-      const found = result.rows[0] as { user_profile_id: string; connection_id: string | null; ciphertext: Sealed | null } | undefined;
+      const result = await client.query('SELECT user_profile_id,connection_id,stale_connection_ids,ciphertext FROM claude_links WHERE owner=$1', [owner]);
+      const found = result.rows[0] as { user_profile_id: string; connection_id: string | null; stale_connection_ids: string[]; ciphertext: Sealed | null } | undefined;
       let row: ClaudeLinkRow | undefined = found && {
-        userProfileId: found.user_profile_id, connectionId: found.connection_id,
+        userProfileId: found.user_profile_id, connectionId: found.connection_id, staleConnectionIds: found.stale_connection_ids,
         ...(found.ciphertext ? { tokens: JSON.parse(this.keyring.open(found.ciphertext, claudeContext(owner))) as ClaudeTokens } : {}),
       };
       const save = async (changes: ClaudeLinkChanges) => {
@@ -159,12 +160,13 @@ export class Store {
         if (!userProfileId) throw new Error('A Claude link needs a user profile');
         const connectionId = changes.connectionId !== undefined ? changes.connectionId : row?.connectionId ?? null;
         const tokens = changes.tokens !== undefined ? changes.tokens ?? undefined : row?.tokens;
+        const staleConnectionIds = changes.staleConnectionIds ?? row?.staleConnectionIds ?? [];
         await client.query(
-          `INSERT INTO claude_links(owner,user_profile_id,connection_id,ciphertext) VALUES($1,$2,$3,$4)
-          ON CONFLICT(owner) DO UPDATE SET user_profile_id=$2,connection_id=$3,ciphertext=$4,updated_at=now()`,
-          [owner, userProfileId, connectionId, tokens ? this.keyring.seal(JSON.stringify(tokens), claudeContext(owner)) : null],
+          `INSERT INTO claude_links(owner,user_profile_id,connection_id,stale_connection_ids,ciphertext) VALUES($1,$2,$3,$4,$5)
+          ON CONFLICT(owner) DO UPDATE SET user_profile_id=$2,connection_id=$3,stale_connection_ids=$4,ciphertext=$5,updated_at=now()`,
+          [owner, userProfileId, connectionId, staleConnectionIds, tokens ? this.keyring.seal(JSON.stringify(tokens), claudeContext(owner)) : null],
         );
-        row = { userProfileId, connectionId, ...(tokens ? { tokens } : {}) };
+        row = { userProfileId, connectionId, staleConnectionIds, ...(tokens ? { tokens } : {}) };
       };
       const value = await fn(row, save);
       await client.query('COMMIT');

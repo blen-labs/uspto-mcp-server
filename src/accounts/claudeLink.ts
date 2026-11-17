@@ -121,7 +121,11 @@ export class ClaudeLink {
       headers: { 'content-type': 'application/json', accept: 'application/json', ...headers },
       body: JSON.stringify(body),
     });
-    const parsed = await response.json().catch(() => ({})) as unknown;
+    // A body that fails to arrive is a lost response (it throws, like a timeout); one that
+    // arrives but isn't JSON is an answer with no fields.
+    const text = await response.text();
+    let parsed: unknown;
+    try { parsed = JSON.parse(text); } catch { parsed = {}; }
     return { status: response.status, body: parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {} };
   }
 
@@ -214,17 +218,17 @@ export class ClaudeLink {
     const connectionId = r.body.connection_id;
     const tokens = this.tokens(r);
     if (r.status !== 200 || typeof connectionId !== 'string' || !tokens) { this.report('code_exchange', r); return 'failed'; }
-    // Two links started before either finished: the newer connection replaces the older one,
-    // which is then revoked so it does not stay billable at Anthropic with no way to end it here.
-    const replaced = await this.store.withClaudeLink(owner, async (row, save) => {
-      await save({ connectionId, tokens });
-      return row?.connectionId && row.connectionId !== connectionId ? row.connectionId : undefined;
+    // Two links started before either finished: the newer connection replaces the older one. The
+    // older ID is recorded in the same write, so it can't be lost: it is revoked now, and if that
+    // fails, Unlink (which revokes every connection on the profile) still ends it.
+    const stale = await this.store.withClaudeLink(owner, async (row, save) => {
+      const replaced = row?.connectionId && row.connectionId !== connectionId ? [row.connectionId] : [];
+      const staleConnectionIds = [...row?.staleConnectionIds ?? [], ...replaced];
+      await save({ connectionId, tokens, staleConnectionIds });
+      return staleConnectionIds;
     });
     await this.store.audit(owner, owner, 'claude.link.created');
-    if (replaced) {
-      const revoked = await this.post(`${AUTH_ORIGIN}/v1/oauth/revoke`, { connection_id: replaced, ...await this.clientAuth() }).catch(() => undefined);
-      if (revoked?.status !== 200) log.warn('account.claude_link_failed', { step: 'revoke_replaced', ...(revoked ? { status: revoked.status } : {}) });
-    }
+    if (stale.length) await this.revokeStale(owner, stale);
     return 'linked';
   }
 
@@ -242,6 +246,21 @@ export class ClaudeLink {
     };
   }
 
+  /** Revokes replaced connections one by one; each one Anthropic confirms is forgotten. */
+  private async revokeStale(owner: string, ids: string[]) {
+    const ended: string[] = [];
+    for (const id of ids) {
+      const r = await this.post(`${AUTH_ORIGIN}/v1/oauth/revoke`, { connection_id: id, ...await this.clientAuth() }).catch(() => undefined);
+      if (r?.status === 200) ended.push(id);
+      else log.warn('account.claude_link_failed', { step: 'revoke_replaced', ...(r ? { status: r.status } : {}) });
+    }
+    if (ended.length) {
+      await this.store.withClaudeLink(owner, async (row, save) => {
+        if (row) await save({ staleConnectionIds: row.staleConnectionIds.filter(id => !ended.includes(id)) });
+      });
+    }
+  }
+
   async status(owner: string) {
     const row = await this.store.claudeLinkStatus(owner);
     return { linked: !!row?.linked, ...(row?.linked ? { linkedAt: row.updatedAt } : {}) };
@@ -254,12 +273,14 @@ export class ClaudeLink {
   async unlink(owner: string): Promise<boolean> {
     let revoked = false;
     const ok = await this.store.withClaudeLink(owner, async (row, save) => {
-      if (!row?.connectionId) return true;
-      const r = await this.post(`${AUTH_ORIGIN}/v1/oauth/revoke`, { connection_id: row.connectionId, ...await this.clientAuth() })
+      if (!row?.connectionId && !row?.staleConnectionIds.length) return true;
+      // By user profile: this ends every connection of this app on it, including any replaced one
+      // whose own revocation failed, or one this server never learned about.
+      const r = await this.post(`${AUTH_ORIGIN}/v1/oauth/revoke`, { user_profile_id: row.userProfileId, ...await this.clientAuth() })
         .catch(() => undefined);
-      // An empty revoked_connection_ids means it had already ended: that is success too.
+      // An empty revoked_connection_ids means they had already ended: that is success too.
       if (!r || r.status !== 200) { if (r) this.report('revoke', r); return false; }
-      await save({ connectionId: null, tokens: null });
+      await save({ connectionId: null, tokens: null, staleConnectionIds: [] });
       revoked = true;
       return true;
     });

@@ -18,6 +18,10 @@ export class FakeClaude {
   private codes = new Map<string, { challenge: string; profile: string }>();
   private refresh = new Map<string, string>(); // refresh token -> connection id
   private replaced = new Map<string, string>(); // used once, may be repeated once
+  /** Live connections and the user profile each belongs to. */
+  active = new Map<string, string>();
+  /** The next revocation answers 503 and ends nothing. */
+  failNextRevoke = false;
   private n = 0;
   constructor(private readonly config: ClaudeLinkConfig, private readonly publicKey: Parameters<typeof jwtVerify>[1]) {}
 
@@ -111,7 +115,9 @@ export class FakeClaude {
           this.codes.delete(String(body.code));
           const challenge = createHash('sha256').update(String(body.code_verifier)).digest('base64url');
           if (!code || code.challenge !== challenge || body.redirect_uri !== this.config.redirectUri) return json(400, { error: 'invalid_grant' });
-          return json(200, this.tokens(`ocon_${++this.n}`, true));
+          const connection = `ocon_${++this.n}`;
+          this.active.set(connection, code.profile);
+          return json(200, this.tokens(connection, true));
         }
         if (body.grant_type === 'refresh_token') {
           if ('scope' in body) return json(400, { error: 'invalid_scope' });
@@ -129,8 +135,12 @@ export class FakeClaude {
       }
       case `${AUTH_ORIGIN}/v1/oauth/revoke`: {
         await this.client(body);
-        const ids = typeof body.connection_id === 'string' ? [body.connection_id] : [];
+        if (this.failNextRevoke) { this.failNextRevoke = false; return json(503, { type: 'error', error: { type: 'overloaded_error' } }); }
+        if (('connection_id' in body) === ('user_profile_id' in body)) return json(400, { error: 'invalid_request' });
+        const ids = [...this.active].filter(([id, profile]) => id === body.connection_id || profile === body.user_profile_id).map(([id]) => id);
+        for (const id of ids) this.active.delete(id);
         for (const [token, connection] of this.refresh) if (ids.includes(connection)) this.refresh.delete(token);
+        for (const [token, connection] of this.replaced) if (ids.includes(connection)) this.replaced.delete(token);
         return json(200, { revoked_connection_ids: ids });
       }
     }

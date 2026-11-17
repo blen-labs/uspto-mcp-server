@@ -737,13 +737,25 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     expect(await link.accessToken(owner)).toBeUndefined();
     expect(await claudeStatus(browser)).toMatchObject({ linked: false });
   });
-  it('revokes the older connection when two links started earlier both finish', async () => {
-    const first = await startLink(other), second = await startLink(other);
+  it('revokes the older connection when two links started earlier both finish, even if that revocation fails', async () => {
+    const connectionOf = async () => (await pool.query('SELECT connection_id, stale_connection_ids FROM claude_links WHERE owner=$1', [personalOwner(bob.id)])).rows[0];
+    const [first, second, third] = [await startLink(other), await startLink(other), await startLink(other)];
     expect(await finishLink(other, first)).toBe('/account?claude=linked');
-    const replaced = (await pool.query('SELECT connection_id FROM claude_links WHERE owner=$1', [personalOwner(bob.id)])).rows[0].connection_id;
+    const one = (await connectionOf()).connection_id;
     expect(await finishLink(other, second)).toBe('/account?claude=linked');
-    expect(claude.calls.at(-1)).toMatchObject({ url: 'https://auth.claude.com/v1/oauth/revoke', body: { connection_id: replaced } });
+    expect(claude.calls.at(-1)).toMatchObject({ url: 'https://auth.claude.com/v1/oauth/revoke', body: { connection_id: one } });
+    expect(claude.active.has(one)).toBe(false);
+    expect((await connectionOf()).stale_connection_ids).toEqual([]);
+    // The revocation of the replaced connection fails: its ID is kept, and Unlink still ends it.
+    const two = (await connectionOf()).connection_id;
+    claude.failNextRevoke = true;
+    expect(await finishLink(other, third)).toBe('/account?claude=linked');
+    expect(claude.active.has(two)).toBe(true);
+    expect((await connectionOf()).stale_connection_ids).toEqual([two]);
     expect((await send(other, '/api/portal/claude/unlink', {})).status).toBe(200);
+    expect(claude.calls.at(-1)!.body).toMatchObject({ user_profile_id: expect.stringMatching(/^uprof_/) });
+    expect([...claude.active.keys()].filter(id => id === two || id === (one as string))).toEqual([]);
+    expect(await connectionOf()).toEqual({ connection_id: null, stale_connection_ids: [] });
   });
   it('unlinks at Claude, keeps the user profile, and links again without a new one', async () => {
     await pool.query('DELETE FROM request_limits'); // the earlier tests used up Alice's 5 link attempts a minute
@@ -753,7 +765,7 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     const unlinked = await send(browser, '/api/portal/claude/unlink', {});
     expect(unlinked.status, await unlinked.clone().text()).toBe(200);
     expect(claude.count('/v1/oauth/revoke')).toBe(revokes + 1);
-    expect(claude.calls.at(-1)!.body.connection_id).toMatch(/^ocon_/);
+    expect(claude.calls.at(-1)!.body.user_profile_id).toMatch(/^uprof_/);
     expect(await claudeStatus(browser)).toMatchObject({ linked: false });
     expect(await finishLink(browser, await startLink(browser))).toBe('/account?claude=linked');
     expect(claude.profilesCreated).toBe(profiles);
