@@ -13,6 +13,25 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 
 
 
+
+
+## [0.2.7] - 2026-11-17
+
+### Changed
+- ask for the running version, not the newest release (support)
+- add an issue chooser and a support guide
+## [0.2.6] - 2026-11-17
+
+### Fixed
+- decide memory and time limits by state in the isolated-vm runner (sandbox)
+- keep statute lists and put patents.search first for inventor queries (search)
+- accept the -- separator (cli)
+- keep TimeoutError on a busy host and name refused buffers (sandbox)
+- cover more question forms and list every rejection ground (search)
+
+### Changed
+- fail when an excepted advisory's package reaches the production tree
+- show a real rejection in the office-action example
 ## [0.2.5] - 2026-11-17
 
 ### Fixed
@@ -121,7 +140,9 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 - Docker image (Node 24 + Deno), an MCPB bundle (manifest v0.4) that prompts for keys, and
   third-party license notices in every artifact.
 
-[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.5...HEAD
+[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.7...HEAD
+[0.2.7]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.6...v0.2.7
+[0.2.6]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.2...v0.2.3
