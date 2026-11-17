@@ -29,7 +29,8 @@ export function tokenize(s: string): string[] {
     .replace(/[^a-z0-9_\s-]/g, ' ')
     .split(/\s+/)
     .filter(t => t && t.length > 1 && !STOP.has(t))
-    .map(singular);
+    .map(singular)
+    .filter(t => !STOP.has(t));
 }
 
 /**
@@ -38,7 +39,10 @@ export function tokenize(s: string): string[] {
  * in the corpus and would outrank every real term. Short numbers ('103', '2024') stay.
  */
 export function queryTokens(query: string): string[] {
-  const all = tokenize(query.replace(/(?<=\d)[,/](?=\d)/g, ''));
+  // Only the two identifier shapes are joined: '102/103' and 'claims 1,2,3' are not identifiers.
+  const all = tokenize(query
+    .replace(/\b\d{1,3}(?:,\d{3})+\b/g, m => m.replace(/,/g, ''))
+    .replace(/\b(\d{2})\/(\d{6})\b/g, '$1$2'));
   const terms = all.filter(t => !/^\d{5,}$/.test(t));
   // A query that is only an identifier keeps it: something is better than no hits.
   return terms.length ? terms : all;
