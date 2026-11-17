@@ -35,4 +35,4 @@ labels: bug
 ```
 ```
 
-> **Security issue?** Please use a GitHub Security Advisory instead — see [SECURITY.md](../../SECURITY.md).
+> **Security issue?** Please use a GitHub Security Advisory instead — see [SECURITY.md](https://github.com/blen-labs/uspto-mcp-server/blob/main/SECURITY.md).
