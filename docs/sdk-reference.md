@@ -87,7 +87,8 @@ with `isError: true`. Use `try/catch` to handle it inline.
 
 Execution-level errors (in the `execute` result, not thrown by SDK calls):
 `ResultTooLarge` (the returned value is over 256 KiB — return less), `CodeTooLarge`
-(over 256 KiB of code), `TimeoutError`, `AbortError` (the client cancelled or the
+(over 256 KiB of code), `TimeoutError`, `MemoryLimitExceeded` (the program outgrew
+`memoryMb` — request fewer records or work in smaller steps), `AbortError` (the client cancelled or the
 server is shutting down), `Busy` (too many executions running), `PolicyError`
 (the code uses a banned construct, or TypeScript syntax), and `SandboxUnavailable`.
 Logs are capped at 64 KiB / 1,000 lines (`[logs truncated]`).

@@ -164,6 +164,9 @@ export class IsolateRunner implements SandboxRunner {
       if (typeof tagged !== 'string' || !tagged.startsWith('E')) return { ok: false, error: { name: 'SandboxProtocolError', message: 'The sandbox returned an invalid result.' } };
       let e: { name?: unknown; message?: unknown; status?: unknown };
       try { e = JSON.parse(tagged.slice(1)) as typeof e; } catch { e = { name: 'Error', message: 'The sandbox returned an unreadable error.' }; }
+      // Buffers count against the isolate's memory limit, and V8 refuses one over it with this
+      // error. Left uncaught, it ended the program for lack of memory, as in the Deno runner.
+      if (e.name === 'RangeError' && e.message === 'Array buffer allocation failed') return { ok: false, error: memoryLimitExceeded(memoryMb) };
       return { ok: false, error: { name: String(e.name ?? 'Error').slice(0, 100), message: boundMessage(String(e.message ?? '')), ...(typeof e.status === 'number' ? { status: e.status } : {}) } };
     };
 
@@ -171,7 +174,9 @@ export class IsolateRunner implements SandboxRunner {
       const outcome = await Promise.race([
         run().catch((err: unknown) => {
           const e = err as { name?: string; message?: string; status?: unknown };
-          if (disposed) return { ok: false, error: { name: 'TimeoutError', message: `Execution exceeded ${timeoutMs}ms` } };
+          // isolated-vm's own timer ends a CPU loop. On a busy host it can report before the
+          // deadline timer above; either way the program ran out of time.
+          if (disposed || e?.message === 'Script execution timed out.') return { ok: false, error: { name: 'TimeoutError', message: `Execution exceeded ${timeoutMs}ms` } };
           // isolated-vm disposes the isolate itself at the heap limit; a program's own errors never reach this handler.
           if (/disposed .*memory limit/i.test(String(e?.message))) return { ok: false, error: memoryLimitExceeded(memoryMb) };
           return { ok: false, error: { name: String(e?.name ?? 'Error').slice(0, 100), message: boundMessage(String(e?.message ?? err)), ...(typeof e?.status === 'number' ? { status: e.status } : {}) } };

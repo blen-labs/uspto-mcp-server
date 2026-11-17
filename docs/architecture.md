@@ -246,8 +246,9 @@ Two runners:
   when the process has grown by more than twice `memoryMb` plus 96 MiB since the
   execution started; the host reports that exit as `MemoryLimitExceeded`.
   A program that fills the heap makes V8 abort the process; the host recognizes that abort
-  on stderr and reports it as `MemoryLimitExceeded` too, as the isolated-vm runner does
-  when its isolate reaches the heap limit.
+  on stderr and reports it as `MemoryLimitExceeded` too. The isolated-vm runner reports
+  the same name when its isolate reaches the heap limit, and when the program leaves
+  uncaught the `RangeError` V8 raises for a buffer over the limit.
 
 Both runners enforce the same **byte budgets** (`src/sandbox/limits.ts`), first
 inside the sandbox — so over-budget data is never transferred — and again on the

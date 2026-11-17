@@ -144,6 +144,23 @@ describe.each([new IsolateRunner(), new DenoRunner()])('$kind runner contract', 
     }
   });
 
+  // isolated-vm has its own timer for a CPU loop. When the host's event loop is busy as the
+  // deadline passes, that timer reports first, and its error must still be a TimeoutError.
+  it('reports TimeoutError when the host is busy as the deadline passes', async ({ skip }) => {
+    if (!(await runner.available())) return skip();
+    const pending = run('while (true) {}', { timeoutMs: 300 });
+    await new Promise(r => setTimeout(r, 150));
+    const end = Date.now() + 400;
+    while (Date.now() < end) { /* busy */ }
+    expect((await pending).error).toMatchObject({ name: 'TimeoutError', message: 'Execution exceeded 300ms' });
+  });
+
+  it('keeps the name of a program error that only talks about a timeout', async ({ skip }) => {
+    if (!(await runner.available())) return skip();
+    const res = await run('throw new Error("Script execution timed out.")');
+    expect(res.error).toMatchObject({ name: 'Error', message: 'Script execution timed out.' });
+  });
+
   it('honors an abort signal', async ({ skip }) => {
     if (!(await runner.available())) return skip();
     const controller = new AbortController();
@@ -254,8 +271,14 @@ describe.each([new IsolateRunner(), new DenoRunner()])('$kind memory limit', run
   ] as const)('stops a program that holds far more than memoryMb in %s', async ([, code], { skip }) => {
     if (!(await runner.available())) return skip();
     const res = await run(code);
-    expect(res.ok).toBe(false);
-    if (runner.kind === 'deno') expect(res.error).toMatchObject({ name: 'MemoryLimitExceeded' });
+    expect(res).toMatchObject({ ok: false, error: { name: 'MemoryLimitExceeded' } });
+  });
+
+  // Only isolated-vm refuses the allocation inside the program; Deno ends the process.
+  it('lets a program catch a refused buffer and go on (isolated-vm)', async ({ skip }) => {
+    if (runner.kind !== 'isolate' || !(await runner.available())) return skip();
+    const res = await run(`try { new Uint8Array(${1024 * MIB}); return 'allocated'; } catch (e) { return [e.name, 1 + 1]; }`);
+    expect(res).toMatchObject({ ok: true, value: ['RangeError', 2] });
   });
 
   it('names a program that fills the JavaScript heap the same way in both runners', async ({ skip }) => {
@@ -264,7 +287,7 @@ describe.each([new IsolateRunner(), new DenoRunner()])('$kind memory limit', run
     expect(res).toMatchObject({ ok: false, error: { name: 'MemoryLimitExceeded', message: expect.stringContaining('memoryMb: 64') } });
   });
 
-  // The name comes from the runtime ending the program, never from text the program writes.
+  // What a program logs or puts in an Error message about memory does not rename its error.
   it('keeps the name of an error the program throws, whatever its text says', async ({ skip }) => {
     if (!(await runner.available())) return skip();
     const text = 'Isolate was disposed during execution due to memory limit. Fatal JavaScript out of memory';
@@ -293,7 +316,7 @@ describe('deno runner isolation (gated on availability)', () => {
     let pids: number[] = [];
     for (let i = 0; i < 50 && pids.length === 0; i++) {
       await new Promise(r => setTimeout(r, 100));
-      pids = spawnSync('pgrep', ['-P', String(process.pid), 'deno'], { encoding: 'utf8' }).stdout.split('\n').filter(Boolean).map(Number);
+      pids = (spawnSync('pgrep', ['-P', String(process.pid), 'deno'], { encoding: 'utf8' }).stdout ?? '').split('\n').filter(Boolean).map(Number);
     }
     expect(pids).toHaveLength(1);
     process.kill(pids[0]!, 'SIGKILL');
