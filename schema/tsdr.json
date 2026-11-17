@@ -38,7 +38,7 @@
       "kind": "endpoint",
       "binding": "tsdr",
       "signature": "tsdr.documents(caseId)",
-      "description": "The trademark case's document list (applications, office actions, responses, registration certificates, specimens) as XML text, one entry per document with its type, mail/received date, document id and page URLs. Parse with string methods / regex in the sandbox and return a summary; PDFs cannot be downloaded from the sandbox. Inspect a slice of the XML first to see the element names.",
+      "description": "The trademark case's document list (applications, office actions, responses, registration certificates, specimens) as XML text, one <Document> per document with DocumentTypeCode, DocumentTypeCodeDescriptionText, MailRoomDate, ScanDateTime, TotalPageQuantity and page media types. The list has no document id and no URLs: the documentId for tsdr.documentInfo is DocumentTypeCode + MailRoomDate as YYYYMMDD (e.g. 'NOA20230322'). Parse with string methods / regex in the sandbox and return a summary; PDFs cannot be downloaded from the sandbox.",
       "example": "const xml = await tsdr.documents('sn97123456'); return xml.slice(0, 3000)"
     },
     {
@@ -46,8 +46,8 @@
       "kind": "endpoint",
       "binding": "tsdr",
       "signature": "tsdr.documentInfo(caseId, documentId)",
-      "description": "Metadata for one document in a trademark case (XML text), e.g. page count and media types. documentId comes from tsdr.documents.",
-      "example": "const xml = await tsdr.documents('sn97123456'); const id = (xml.match(/<DocumentIdentifier>([^<]+)</) ?? [])[1]; return id ? await tsdr.documentInfo('sn97123456', id) : xml.slice(0, 2000)"
+      "description": "Metadata for one document in a trademark case (XML text), e.g. page count and media types. documentId is the document's DocumentTypeCode + MailRoomDate as YYYYMMDD, both from tsdr.documents (e.g. 'NOA20230322').",
+      "example": "const xml = await tsdr.documents('sn97123456'); const m = xml.match(/<DocumentTypeCode>([^<]+)<[\\s\\S]*?<MailRoomDate>(\\d{4})-(\\d{2})-(\\d{2})/); return m ? await tsdr.documentInfo('sn97123456', m[1] + m[2] + m[3] + m[4]) : xml.slice(0, 2000)"
     },
     {
       "id": "tsdr.lastUpdate",

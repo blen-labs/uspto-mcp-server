@@ -13,15 +13,35 @@ export interface ScoredDoc {
 
 const STOP = new Set([
   'a','an','and','are','as','at','be','by','for','from','has','have','i','in','is','it','its','of','on','or','that',
-  'the','to','was','were','will','with','this','these','those','if','then','than','so','do','does','can','should'
+  'the','to','was','were','will','with','this','these','those','if','then','than','so','do','does','can','should',
+  // Question words: a whole user question is a common query.
+  'which','what','who','how','did','they','been','me','any','anyone','there','show'
 ]);
+
+/** 'IPRs' and 'office actions' must find 'IPR' and 'office action': drop a plural -s (not -ss). */
+function singular(t: string): string {
+  return t.length > 3 && t.endsWith('s') && !t.endsWith('ss') ? t.slice(0, -1) : t;
+}
 
 export function tokenize(s: string): string[] {
   return s
     .toLowerCase()
     .replace(/[^a-z0-9_\s-]/g, ' ')
     .split(/\s+/)
-    .filter(t => t && t.length > 1 && !STOP.has(t));
+    .filter(t => t && t.length > 1 && !STOP.has(t))
+    .map(singular);
+}
+
+/**
+ * Query tokens without the identifiers a question carries ('10,169,987', '17/248,024', '97123456').
+ * They say nothing about which method to call, but their pieces match the number-format examples
+ * in the corpus and would outrank every real term. Short numbers ('103', '2024') stay.
+ */
+export function queryTokens(query: string): string[] {
+  const all = tokenize(query.replace(/(?<=\d)[,/](?=\d)/g, ''));
+  const terms = all.filter(t => !/^\d{5,}$/.test(t));
+  // A query that is only an identifier keeps it: something is better than no hits.
+  return terms.length ? terms : all;
 }
 
 export class Bm25Index {
@@ -50,7 +70,7 @@ export class Bm25Index {
   }
 
   search(query: string, k = 10): ScoredDoc[] {
-    const qt = tokenize(query);
+    const qt = queryTokens(query);
     if (qt.length === 0) return [];
     const results: ScoredDoc[] = [];
     for (const [id, toks] of this.tokens) {
