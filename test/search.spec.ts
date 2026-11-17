@@ -29,6 +29,7 @@ describe('bm25', () => {
     expect(queryTokens('patents 10,169,987,11,646,472 and 9,876,543')).toEqual(['patent']);
     // A design patent or a US prefix is still one identifier.
     expect(queryTokens('patents D1,102,103 and US10,169,987')).toEqual(['patent']);
+    expect(queryTokens('design D987,654, US10,169,987B2 and RE49,123')).toEqual(['design']);
   });
 
   it('scores relevant docs higher', () => {
