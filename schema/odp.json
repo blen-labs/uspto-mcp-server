@@ -178,7 +178,7 @@
       "kind": "endpoint",
       "binding": "odp",
       "signature": "odp.ptab.proceedings.search(params: { q?, filters?, rangeFilters?, sort?, fields?, facets?, limit?, offset? } | q-string)",
-      "description": "Search PTAB AIA trial proceedings (IPR, PGR, CBM, DER): trialNumber, trialMetaData (trialTypeCode, trialStatusCategory, petitionFilingDate, institutionDecisionDate, terminationDate), patentOwnerData (patentNumber, applicationNumberText, technology center), regularPetitionerData (realPartyInInterestName, counselName). Returns { count, patentTrialProceedingDataBag: [...] }. Params: q, filters, rangeFilters, sort, fields, facets, limit, offset (see odp.syntax.search).",
+      "description": "Search PTAB AIA trial proceedings, where a petitioner challenged a granted patent (IPR inter partes review, PGR post-grant review, CBM, DER): trialNumber, trialMetaData (trialTypeCode, trialStatusCategory, petitionFilingDate, institutionDecisionDate, terminationDate), patentOwnerData (patentNumber, applicationNumberText, technology center), regularPetitionerData (realPartyInInterestName, counselName). Returns { count, patentTrialProceedingDataBag: [...] }. Params: q, filters, rangeFilters, sort, fields, facets, limit, offset (see odp.syntax.search).",
       "example": "await odp.ptab.proceedings.search({ q: 'patentOwnerData.patentNumber:9876543', fields: ['trialNumber', 'trialMetaData.trialTypeCode', 'trialMetaData.trialStatusCategory', 'trialMetaData.petitionFilingDate', 'regularPetitionerData.realPartyInInterestName'] })"
     },
     {
@@ -306,7 +306,7 @@
       "kind": "endpoint",
       "binding": "odp",
       "signature": "odp.officeActions.search(params: { q?, filters?, rangeFilters?, sort?, fields?, facets?, limit?, offset? } | q-string)",
-      "description": "Search office actions (full text) issued by examiners for public applications filed 2001+: applicationNumberText, documentCode (CTNF non-final, CTFR final, CTRS restriction, NOA...), documentCodeDescriptionText, submissionDate, groupArtUnitNumber, patentNumber, rejectionTypeBag (statute sections as strings: '101', '102', '103', '112'), officeActionText, officeActionRecordIdentifier. This is the current Office Action Search API; prefer it over the legacy odp.oa.* DSAPI endpoints. Returns { count, officeActionDataBag: [...] }. Params: q, filters, rangeFilters, sort, fields, facets, limit, offset (see odp.syntax.search).",
+      "description": "Search office actions (full text) issued by examiners for public applications filed 2001+: applicationNumberText, documentCode (CTNF non-final, CTFR final, CTRS restriction, NOA...), documentCodeDescriptionText, submissionDate, groupArtUnitNumber, patentNumber, rejectionTypeBag (rejection grounds as statute sections: '101', '102', '103', '112'), officeActionText, officeActionRecordIdentifier. This is the current Office Action Search API; prefer it over the legacy odp.oa.* DSAPI endpoints. Returns { count, officeActionDataBag: [...] }. Params: q, filters, rangeFilters, sort, fields, facets, limit, offset (see odp.syntax.search).",
       "example": "await odp.officeActions.search({ q: 'documentCode:CTNF AND rejectionTypeBag:103', fields: ['officeActionRecordIdentifier', 'applicationNumberText', 'submissionDate', 'rejectionTypeBag'], sort: 'submissionDate desc', limit: 10 })"
     },
     {

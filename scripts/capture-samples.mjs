@@ -23,7 +23,7 @@ const { keyGate, LIMIT_DEFAULTS } = await import(resolve(root, 'dist/supervisor/
 const odp = getSources({
   odp: { baseUrl: 'https://api.uspto.gov', apiKey: key, gate: keyGate(LIMIT_DEFAULTS.odp) },
   tsdr: { baseUrl: 'https://tsdrapi.uspto.gov' },
-  userAgent: 'uspto-mcp-server/0.1 (field dictionary capture)', timeoutMs: 30_000, retries: 1,
+  userAgent: 'uspto-mcp-server (field dictionary capture)', timeoutMs: 30_000, retries: 1,
   cacheTtlMs: 0, cacheMaxItems: 0,
 }).find(s => s.name === 'odp');
 

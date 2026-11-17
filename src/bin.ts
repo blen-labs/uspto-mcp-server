@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { startStdio } from './server/stdio.js';
 import { startHttp, type HttpHandle } from './server/http.js';
+import { SERVER_VERSION } from './server/mcpServer.js';
 import { buildSupervisor, EXECUTION_DEFAULTS, LIMIT_DEFAULTS, type KeyedLimits, type SupervisorConfig } from './supervisor/index.js';
 import { ODP_BASE_URL } from './sdk/sources/odp.js';
 import { TSDR_BASE_URL } from './sdk/sources/tsdr.js';
@@ -44,6 +45,8 @@ function parseArgs(argv: string[]): CliArgs {
       printHelp();
       process.exit(0);
     }
+    // A mistyped --http must not quietly start the stdio transport instead.
+    else throw new Error(`Unknown option '${a}'. Run with --help to see the options.`);
   }
   if (!['auto', 'isolate', 'deno'].includes(args.sandbox)) throw new Error(`Unknown sandbox '${args.sandbox}'. Use auto, isolate or deno.`);
   // An unauthenticated server listens on loopback unless told otherwise.
@@ -142,7 +145,7 @@ async function main(): Promise<void> {
     // anyone (USPTO keys must not be shared): signed-in users use only their own saved keys.
     odpApiKey: secret(env.USPTO_API_KEY),
     tsdrApiKey: secret(env.USPTO_TSDR_API_KEY),
-    userAgent: env.USPTO_USER_AGENT ?? 'uspto-mcp-server/0.1 (+https://github.com/blen-labs/uspto-mcp-server)',
+    userAgent: env.USPTO_USER_AGENT ?? `uspto-mcp-server/${SERVER_VERSION} (+https://github.com/blen-labs/uspto-mcp-server)`,
     upstreamTimeoutMs: atLeastOne(env.USPTO_UPSTREAM_TIMEOUT_MS, 30_000),
     upstreamRetries: nonNegativeInt(env.USPTO_UPSTREAM_RETRIES, 2),
     cacheTtlMs: nonNegativeInt(env.USPTO_CACHE_TTL_MS, 600_000),

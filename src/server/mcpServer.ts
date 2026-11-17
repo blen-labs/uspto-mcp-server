@@ -53,9 +53,12 @@ export const SERVER_INSTRUCTIONS = [
   'Application numbers (e.g. 17/248,024) differ from patent numbers (e.g. 11,646,472): resolve a patent number with odp.patents.byPatentNumber first.',
 ].join('\n');
 
+/** This build's release. The release workflow stamps it; it also names the server to USPTO (User-Agent). */
+export const SERVER_VERSION = '0.2.4'; // x-release-version
+
 export function buildMcpServer(deps: CatalogDeps, requestCtx?: RequestCtx): McpServer {
   const server = new McpServer(
-    { name: 'uspto-mcp-server', version: '0.2.4' }, // x-release-version
+    { name: 'uspto-mcp-server', version: SERVER_VERSION },
     {
       capabilities: { tools: {} },
       instructions: SERVER_INSTRUCTIONS,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Bm25Index, tokenize } from '../src/search/bm25.js';
+import { Bm25Index, queryTokens, tokenize } from '../src/search/bm25.js';
 import { buildCorpus } from '../src/search/corpus.js';
 import { getSources } from '../src/sdk/sources/index.js';
 import { searchApi } from '../src/tools/searchApi.js';
@@ -13,6 +13,13 @@ function corpus() {
 describe('bm25', () => {
   it('tokenizes', () => {
     expect(tokenize('Hello, world! THE quick brown fox.')).toEqual(['hello', 'world', 'quick', 'brown', 'fox']);
+  });
+
+  it('matches plurals, and keeps identifiers out of a query but not short numbers', () => {
+    expect(tokenize('IPRs office actions class')).toEqual(['ipr', 'office', 'action', 'class']);
+    expect(queryTokens('patent 10,169,987 application 17/248,024 serial 97123456')).toEqual(['patent', 'application', 'serial']);
+    expect(queryTokens('rejection 35 U.S.C. 103 in 2024')).toEqual(['rejection', '35', '103', '2024']);
+    expect(queryTokens('17/248,024')).toEqual(['17248024']);
   });
 
   it('scores relevant docs higher', () => {
@@ -50,6 +57,12 @@ describe('search_api tool', () => {
     ['find application for granted patent number', 'odp.patents.byPatentNumber'],
     ['parent continuation divisional applications', 'odp.patents.continuity'],
     ['bulk dataset download files grant full text XML', 'odp.bulk.get'],
+    // Whole user questions, as the README words them: plurals, question words, and
+    // identifiers that say nothing about which method to call.
+    ['Which IPRs have been filed against patent 10,169,987, and how did they end?', 'odp.ptab.proceedings.search'],
+    ['Has anyone challenged patent 10,169,987 at the PTAB?', 'odp.ptab.proceedings.search'],
+    ['Show the office actions and rejection grounds for application 17/248,024.', 'odp.officeActions.search'],
+    ["What's the status of trademark serial number 97123456?", 'tsdr.status'],
   ];
   it('finds the right method in the top 5 for typical questions', () => {
     const c = corpus();

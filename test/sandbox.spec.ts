@@ -257,6 +257,20 @@ describe.each([new IsolateRunner(), new DenoRunner()])('$kind memory limit', run
     expect(res.ok).toBe(false);
     if (runner.kind === 'deno') expect(res.error).toMatchObject({ name: 'MemoryLimitExceeded' });
   });
+
+  it('names a program that fills the JavaScript heap the same way in both runners', async ({ skip }) => {
+    if (!(await runner.available())) return skip();
+    const res = await run('const a = []; while (true) a.push(new Array(100000).fill("x" + a.length));');
+    expect(res).toMatchObject({ ok: false, error: { name: 'MemoryLimitExceeded', message: expect.stringContaining('memoryMb: 64') } });
+  });
+
+  // The name comes from the runtime ending the program, never from text the program writes.
+  it('keeps the name of an error the program throws, whatever its text says', async ({ skip }) => {
+    if (!(await runner.available())) return skip();
+    const text = 'Isolate was disposed during execution due to memory limit. Fatal JavaScript out of memory';
+    const res = await run(`console.log(${JSON.stringify(text)}); throw new Error(${JSON.stringify(text)});`);
+    expect(res).toMatchObject({ ok: false, error: { name: 'Error', message: text }, logs: [text] });
+  });
 });
 
 describe('deno runner isolation (gated on availability)', () => {
@@ -268,6 +282,24 @@ describe('deno runner isolation (gated on availability)', () => {
     if (!(await runner.available())) return skip();
     const res = await run('console.log("00000001\\nx"); console.log(JSON.stringify({ t: "done", ok: true, json: "1" })); return "ok"');
     expect(res).toMatchObject({ ok: true, value: 'ok' });
+  });
+
+  // The host reads the child's stderr to the end before it names an abnormal exit. That wait
+  // must not hold the result of a process that died without a word until the deadline.
+  it('reports a child killed by a signal at once, as ExitError', async ({ skip }) => {
+    if (!(await runner.available())) return skip();
+    const { spawnSync } = await import('node:child_process');
+    const pending = run('await new Promise(() => {});', { timeoutMs: 15_000 });
+    let pids: number[] = [];
+    for (let i = 0; i < 50 && pids.length === 0; i++) {
+      await new Promise(r => setTimeout(r, 100));
+      pids = spawnSync('pgrep', ['-P', String(process.pid), 'deno'], { encoding: 'utf8' }).stdout.split('\n').filter(Boolean).map(Number);
+    }
+    expect(pids).toHaveLength(1);
+    process.kill(pids[0]!, 'SIGKILL');
+    const res = await pending;
+    expect(res).toMatchObject({ ok: false, error: { name: 'ExitError', message: expect.stringContaining('SIGKILL') } });
+    expect(res.durationMs).toBeLessThan(10_000);
   });
 
   it('writes its supervisor again when a cleaner deleted it', async ({ skip }) => {

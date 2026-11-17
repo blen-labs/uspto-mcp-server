@@ -1,6 +1,6 @@
 import type { ExecuteOptions, ExecuteResult, RpcBridge, SandboxRunner } from './types.js';
 import { preflight } from './policy.js';
-import { DEFAULT_LIMITS, LOG_LINE_OVERHEAD, LOG_TRUNCATED, LogSink, MAX_ERROR_MESSAGE, boundMessage, checkRpcArgs, finishValue, policyMessage, resultTooLarge, type SandboxLimits } from './limits.js';
+import { DEFAULT_LIMITS, LOG_LINE_OVERHEAD, LOG_TRUNCATED, LogSink, MAX_ERROR_MESSAGE, boundMessage, checkRpcArgs, finishValue, memoryLimitExceeded, policyMessage, resultTooLarge, type SandboxLimits } from './limits.js';
 
 type Ivm = any; // isolated-vm ships its own types, but it is an optional native dependency.
 
@@ -48,7 +48,8 @@ export class IsolateRunner implements SandboxRunner {
     }
 
     const ivm = await loadIvm();
-    const isolate = new ivm.Isolate({ memoryLimit: Math.max(16, opts.memoryMb ?? 64) });
+    const memoryMb = Math.max(16, opts.memoryMb ?? 64);
+    const isolate = new ivm.Isolate({ memoryLimit: memoryMb });
     let disposed = false;
     const dispose = () => { if (!disposed) { disposed = true; try { isolate.dispose(); } catch { /* ignore */ } } };
 
@@ -171,6 +172,8 @@ export class IsolateRunner implements SandboxRunner {
         run().catch((err: unknown) => {
           const e = err as { name?: string; message?: string; status?: unknown };
           if (disposed) return { ok: false, error: { name: 'TimeoutError', message: `Execution exceeded ${timeoutMs}ms` } };
+          // isolated-vm disposes the isolate itself at the heap limit; a program's own errors never reach this handler.
+          if (/disposed .*memory limit/i.test(String(e?.message))) return { ok: false, error: memoryLimitExceeded(memoryMb) };
           return { ok: false, error: { name: String(e?.name ?? 'Error').slice(0, 100), message: boundMessage(String(e?.message ?? err)), ...(typeof e?.status === 'number' ? { status: e.status } : {}) } };
         }),
         stopped,

@@ -29,7 +29,7 @@ export function createOdpSource(cfg: SourceConfig): Source {
     name: 'odp',
     label: ODP_LABEL,
     enabled,
-    disabledReason: enabled ? undefined : 'The USPTO Open Data Portal requires an API key. Set USPTO_API_KEY (free: sign in at https://data.uspto.gov/myodp, verify with ID.me, then request a key).',
+    disabledReason: enabled ? undefined : 'The USPTO Open Data Portal requires an API key. Set USPTO_API_KEY (free: sign in at https://data.uspto.gov/apikey, verify with ID.me, then request a key).',
     client,
     methods: Object.freeze({
       'patents.search': patents.search,

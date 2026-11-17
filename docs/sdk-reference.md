@@ -218,7 +218,7 @@ await odp.patents.statusCodes({ q: 'applicationStatusDescriptionText:abandoned',
 
 #### `odp.ptab.proceedings.search(params: { q?, filters?, rangeFilters?, sort?, fields?, facets?, limit?, offset? } | q-string)`
 
-Search PTAB AIA trial proceedings (IPR, PGR, CBM, DER): trialNumber, trialMetaData (trialTypeCode, trialStatusCategory, petitionFilingDate, institutionDecisionDate, terminationDate), patentOwnerData (patentNumber, applicationNumberText, technology center), regularPetitionerData (realPartyInInterestName, counselName). Returns { count, patentTrialProceedingDataBag: [...] }. Params: q, filters, rangeFilters, sort, fields, facets, limit, offset (see odp.syntax.search).
+Search PTAB AIA trial proceedings, where a petitioner challenged a granted patent (IPR inter partes review, PGR post-grant review, CBM, DER): trialNumber, trialMetaData (trialTypeCode, trialStatusCategory, petitionFilingDate, institutionDecisionDate, terminationDate), patentOwnerData (patentNumber, applicationNumberText, technology center), regularPetitionerData (realPartyInInterestName, counselName). Returns { count, patentTrialProceedingDataBag: [...] }. Params: q, filters, rangeFilters, sort, fields, facets, limit, offset (see odp.syntax.search).
 
 ```js
 await odp.ptab.proceedings.search({ q: 'patentOwnerData.patentNumber:9876543', fields: ['trialNumber', 'trialMetaData.trialTypeCode', 'trialMetaData.trialStatusCategory', 'trialMetaData.petitionFilingDate', 'regularPetitionerData.realPartyInInterestName'] })
@@ -358,7 +358,7 @@ const s = await odp.petitions.search({ fields: ['petitionDecisionRecordIdentifie
 
 #### `odp.officeActions.search(params: { q?, filters?, rangeFilters?, sort?, fields?, facets?, limit?, offset? } | q-string)`
 
-Search office actions (full text) issued by examiners for public applications filed 2001+: applicationNumberText, documentCode (CTNF non-final, CTFR final, CTRS restriction, NOA...), documentCodeDescriptionText, submissionDate, groupArtUnitNumber, patentNumber, rejectionTypeBag (statute sections as strings: '101', '102', '103', '112'), officeActionText, officeActionRecordIdentifier. This is the current Office Action Search API; prefer it over the legacy odp.oa.* DSAPI endpoints. Returns { count, officeActionDataBag: [...] }. Params: q, filters, rangeFilters, sort, fields, facets, limit, offset (see odp.syntax.search).
+Search office actions (full text) issued by examiners for public applications filed 2001+: applicationNumberText, documentCode (CTNF non-final, CTFR final, CTRS restriction, NOA...), documentCodeDescriptionText, submissionDate, groupArtUnitNumber, patentNumber, rejectionTypeBag (rejection grounds as statute sections: '101', '102', '103', '112'), officeActionText, officeActionRecordIdentifier. This is the current Office Action Search API; prefer it over the legacy odp.oa.* DSAPI endpoints. Returns { count, officeActionDataBag: [...] }. Params: q, filters, rangeFilters, sort, fields, facets, limit, offset (see odp.syntax.search).
 
 ```js
 await odp.officeActions.search({ q: 'documentCode:CTNF AND rejectionTypeBag:103', fields: ['officeActionRecordIdentifier', 'applicationNumberText', 'submissionDate', 'rejectionTypeBag'], sort: 'submissionDate desc', limit: 10 })
@@ -490,7 +490,7 @@ await tsdr.multiStatus('sn', ['97123456', '97123457'])
 
 #### `tsdr.documents(caseId)`
 
-The trademark case's document list (applications, office actions, responses, registration certificates, specimens) as XML text, one entry per document with its type, mail/received date, document id and page URLs. Parse with string methods / regex in the sandbox and return a summary; PDFs cannot be downloaded from the sandbox. Inspect a slice of the XML first to see the element names.
+The trademark case's document list (applications, office actions, responses, registration certificates, specimens) as XML text, one <Document> per document with DocumentTypeCode, DocumentTypeCodeDescriptionText, MailRoomDate, ScanDateTime, TotalPageQuantity and page media types. The list has no document id and no URLs: the documentId for tsdr.documentInfo is DocumentTypeCode + MailRoomDate as YYYYMMDD (e.g. 'NOA20230322'). Parse with string methods / regex in the sandbox and return a summary; PDFs cannot be downloaded from the sandbox.
 
 ```js
 const xml = await tsdr.documents('sn97123456'); return xml.slice(0, 3000)
@@ -498,10 +498,10 @@ const xml = await tsdr.documents('sn97123456'); return xml.slice(0, 3000)
 
 #### `tsdr.documentInfo(caseId, documentId)`
 
-Metadata for one document in a trademark case (XML text), e.g. page count and media types. documentId comes from tsdr.documents.
+Metadata for one document in a trademark case (XML text), e.g. page count and media types. documentId is the document's DocumentTypeCode + MailRoomDate as YYYYMMDD, both from tsdr.documents (e.g. 'NOA20230322').
 
 ```js
-const xml = await tsdr.documents('sn97123456'); const id = (xml.match(/<DocumentIdentifier>([^<]+)</) ?? [])[1]; return id ? await tsdr.documentInfo('sn97123456', id) : xml.slice(0, 2000)
+const xml = await tsdr.documents('sn97123456'); const m = xml.match(/<DocumentTypeCode>([^<]+)<[\s\S]*?<MailRoomDate>(\d{4})-(\d{2})-(\d{2})/); return m ? await tsdr.documentInfo('sn97123456', m[1] + m[2] + m[3] + m[4]) : xml.slice(0, 2000)
 ```
 
 #### `tsdr.lastUpdate(serialNumber)`
