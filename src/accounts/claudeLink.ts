@@ -201,17 +201,14 @@ export class ClaudeLink {
     if (typeof params.state !== 'string' || params.state.length > 256) return 'expired';
     const pending = await this.store.takeClaudePending(digest(params.state));
     if (!pending || pending.owner !== owner || pending.sessionId !== sessionId) return 'expired';
-    if (params.error !== undefined) {
-      if (params.error === 'access_denied') return 'denied';
-      if (params.error === 'user_profile_already_linked') return 'already_linked';
-      log.warn('account.claude_link_failed', { step: 'authorize', code: String(params.error).slice(0, 64) });
-      return 'failed';
-    }
-    if (typeof params.code !== 'string' || !params.code || params.code.length > 2048) return 'failed';
+    // Claude sends back a code, or an error and no code. Without a usable code nothing is
+    // exchanged; the error only picks which fixed message the account page shows.
+    const code = typeof params.code === 'string' && params.code.length <= 2048 ? params.code : '';
+    if (!code) return this.declined(params.error);
     let r: JsonResponse;
     try {
       r = await this.post(`${AUTH_ORIGIN}/v1/oauth/token`, {
-        grant_type: 'authorization_code', code: params.code, code_verifier: pending.verifier,
+        grant_type: 'authorization_code', code, code_verifier: pending.verifier,
         redirect_uri: this.config.redirectUri, ...await this.clientAuth(),
       });
     } catch { return 'failed'; }
@@ -230,6 +227,13 @@ export class ClaudeLink {
     await this.store.audit(owner, owner, 'claude.link.created');
     if (stale.length) await this.revokeStale(owner, stale);
     return 'linked';
+  }
+
+  private declined(error: unknown): LinkResult {
+    const known: Record<string, LinkResult> = { access_denied: 'denied', user_profile_already_linked: 'already_linked' };
+    const result = typeof error === 'string' && Object.hasOwn(known, error) ? known[error]! : 'failed';
+    if (result === 'failed') log.warn('account.claude_link_failed', { step: 'authorize', code: String(error ?? 'no_code').slice(0, 64) });
+    return result;
   }
 
   private tokens(r: JsonResponse): ClaudeTokens | undefined {
