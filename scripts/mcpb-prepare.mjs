@@ -55,7 +55,7 @@ export function buildManifest(pkg) {
       uspto_api_key: {
         type: 'string',
         title: 'USPTO Open Data Portal API key',
-        description: 'Free: sign in at data.uspto.gov/myodp (USPTO.gov account verified with ID.me) and request a key. Used for patents, PTAB, petitions, office actions and bulk datasets.',
+        description: 'Free: sign in at data.uspto.gov/apikey (USPTO.gov account verified with ID.me) and request a key. Used for patents, PTAB, petitions, office actions and bulk datasets.',
         sensitive: true,
         required: true,
       },

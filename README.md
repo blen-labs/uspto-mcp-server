@@ -25,7 +25,7 @@ Both sources need a free, **personal** API key. USPTO issues one key per account
 
 | Source | Key | How to get it | Env var |
 |---|---|---|---|
-| `odp` | ODP API key, sent as `X-API-KEY` | A USPTO.gov account with multi-factor authentication (required for all ODP use since June 18, 2026), linked once to a verified ID.me identity; then sign in at [data.uspto.gov/myodp](https://data.uspto.gov/myodp) and use **Manage API Key**. See [Register for ODP access](https://data.uspto.gov/support/universal-registration). | `USPTO_API_KEY` |
+| `odp` | ODP API key, sent as `X-API-KEY` | A USPTO.gov account with multi-factor authentication (required for all ODP use since June 18, 2026), linked once to a verified ID.me identity; then sign in at [data.uspto.gov/apikey](https://data.uspto.gov/apikey) and use **Manage API Key**. See [Register for ODP access](https://data.uspto.gov/support/universal-registration). | `USPTO_API_KEY` |
 | `tsdr` | TSDR key, sent as `USPTO-API-KEY` (separate from the ODP key; the ODP key does not work on TSDR) | [USPTO API Key Manager](https://account.uspto.gov/api-manager) | `USPTO_TSDR_API_KEY` |
 
 USPTO says a key "shouldn't expire if it is used at least one time per year". Since August 18, 2026, USPTO.gov profiles must include four additional fields; keys of accounts that had not completed them by October 8, 2026 were **deactivated** (every call returns `403`). To reactivate, complete the fields under **Open Data Portal** in your USPTO.gov account settings, then click **Activate API Key** on the ODP Manage API Key page.

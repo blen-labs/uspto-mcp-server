@@ -44,7 +44,7 @@ export const KEY_INFO = {
     help: (
       <>
         Free: sign in at{' '}
-        <ExternalLink href="https://data.uspto.gov/myodp">data.uspto.gov/myodp</ExternalLink> with a
+        <ExternalLink href="https://data.uspto.gov/apikey">data.uspto.gov/apikey</ExternalLink> with a
         USPTO.gov account that has multi-factor authentication and is linked to ID.me, then open
         Manage API Key (
         <ExternalLink href="https://data.uspto.gov/support/universal-registration">how to register</ExternalLink>
