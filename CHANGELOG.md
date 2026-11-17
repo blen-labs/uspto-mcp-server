@@ -16,6 +16,12 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 
 
 
+
+## [0.2.9] - 2026-11-17
+
+### Changed
+- link SECURITY.md absolutely (templates)
+- add a question template and send key problems to the keys page
 ## [0.2.8] - 2026-11-17
 
 ### Fixed
@@ -146,7 +152,8 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 - Docker image (Node 24 + Deno), an MCPB bundle (manifest v0.4) that prompts for keys, and
   third-party license notices in every artifact.
 
-[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.8...HEAD
+[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.9...HEAD
+[0.2.9]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.5...v0.2.6
