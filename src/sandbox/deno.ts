@@ -5,8 +5,10 @@ import { join } from 'node:path';
 import { TEARDOWN, type ExecuteOptions, type ExecuteResult, type RpcBridge, type SandboxRunner } from './types.js';
 import { log } from '../util/logger.js';
 import { preflight } from './policy.js';
-import { DEFAULT_LIMITS, LOG_LINE_OVERHEAD, LOG_TRUNCATED, LogSink, MAX_ERROR_MESSAGE, boundMessage, checkRpcArgs, finishValue, policyMessage, resultTooLarge, type SandboxLimits } from './limits.js';
+import { DEFAULT_LIMITS, LOG_LINE_OVERHEAD, LOG_TRUNCATED, LogSink, MAX_ERROR_MESSAGE, boundMessage, checkRpcArgs, finishValue, memoryLimitExceeded, policyMessage, resultTooLarge, type SandboxLimits } from './limits.js';
 
+/** What V8 prints when --max-old-space-size ends the process ("Fatal JavaScript out of memory: Reached heap limit"). */
+const V8_OUT_OF_MEMORY = /Fatal (?:JavaScript|process) out of memory/;
 /** The supervisor exits with this code when the sandbox process outgrows its memory limit. */
 const MEMORY_EXIT_CODE = 97;
 /**
@@ -110,6 +112,7 @@ export class DenoRunner implements SandboxRunner {
       let bufferedBytes = 0;
       let pendingRpc = 0;
       let stderrTail = '';
+      let heapExhausted = false;
 
       // Choosing the outcome and tearing down are separate: the first terminal event fixes the
       // result, and the promise resolves only once the child has exited (bounded wait), so the
@@ -144,12 +147,18 @@ export class DenoRunner implements SandboxRunner {
       // The exit code carries the reason: a last frame on stdout could arrive after this event.
       child.on('exit', (code, killedBy) => {
         // What Deno and V8 wrote about the exit is for the operator, not for the caller.
-        if (!settled && code !== MEMORY_EXIT_CODE) log.warn('sandbox.exited', { code, signal: killedBy, stderr: stderrTail });
-        settle({ ok: false, error: code === MEMORY_EXIT_CODE
-          ? { name: 'MemoryLimitExceeded', message: `The program used more memory than its limit (memoryMb: ${memoryMb}). Request fewer records (limit), select fields (fields: [...]), or process the data in smaller steps.` }
-          : { name: 'ExitError', message: killedBy
-            ? `The sandbox process ended abnormally (${killedBy}). The usual cause is a program that fills the JavaScript heap (memoryMb: ${memoryMb}).`
-            : `The sandbox exited unexpectedly (code ${code}).` } });
+        const finish = () => {
+          const outOfMemory = code === MEMORY_EXIT_CODE || heapExhausted;
+          if (!settled && !outOfMemory) log.warn('sandbox.exited', { code, signal: killedBy, stderr: stderrTail });
+          settle({ ok: false, error: outOfMemory
+            ? memoryLimitExceeded(memoryMb)
+            : { name: 'ExitError', message: killedBy
+              ? `The sandbox process ended abnormally (${killedBy}). The usual cause is a program that fills the JavaScript heap (memoryMb: ${memoryMb}).`
+              : `The sandbox exited unexpectedly (code ${code}).` } });
+        };
+        // V8 says why it aborted on stderr, and the exit event can come before that text is read.
+        if (killedBy && !settled && !child.stderr.readableEnded) child.stderr.once('end', finish);
+        else finish();
       });
       if (signal?.aborted) return onAbort();
       signal?.addEventListener('abort', onAbort, { once: true });
@@ -233,7 +242,12 @@ export class DenoRunner implements SandboxRunner {
       });
       child.stderr.setEncoding('utf8');
       // Never into `logs`: a fatal error dump from V8 names addresses and the process id.
-      child.stderr.on('data', (chunk: string) => { stderrTail = (stderrTail + chunk).slice(-2000); });
+      child.stderr.on('data', (chunk: string) => {
+        const text = stderrTail + chunk;
+        // V8 names a heap-limit abort before its stack trace, which can push that line out of the tail.
+        if (V8_OUT_OF_MEMORY.test(text)) heapExhausted = true;
+        stderrTail = text.slice(-2000);
+      });
       child.stdin.on('error', () => { /* child exited; exit handler settles */ });
     });
   }
