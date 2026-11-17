@@ -15,6 +15,12 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 
 
 
+
+## [0.2.8] - 2026-11-17
+
+### Fixed
+- drop design, reissue and kind-code patent numbers from queries (search)
+- treat design and US-prefixed patent numbers as identifiers (search)
 ## [0.2.7] - 2026-11-17
 
 ### Changed
@@ -140,7 +146,8 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 - Docker image (Node 24 + Deno), an MCPB bundle (manifest v0.4) that prompts for keys, and
   third-party license notices in every artifact.
 
-[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.7...HEAD
+[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.8...HEAD
+[0.2.8]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.4...v0.2.5
