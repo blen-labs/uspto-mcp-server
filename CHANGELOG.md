@@ -18,6 +18,16 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 
 
 
+
+## [0.3.0] - 2026-11-17
+
+### Added
+- link a user's own Claude organization for billing (accounts)
+
+### Fixed
+- exchange the callback code without branching on Claude's error first (accounts)
+- never lose a replaced Claude connection (accounts)
+- review fixes for linked Claude billing (accounts)
 ## [0.2.10] - 2026-11-17
 
 ### Fixed
@@ -158,7 +168,8 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 - Docker image (Node 24 + Deno), an MCPB bundle (manifest v0.4) that prompts for keys, and
   third-party license notices in every artifact.
 
-[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.10...HEAD
+[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.10...v0.3.0
 [0.2.10]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.9...v0.2.10
 [0.2.9]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.7...v0.2.8
