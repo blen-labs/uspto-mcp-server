@@ -30,8 +30,8 @@ USPTO. Help is given on a best-effort basis by the maintainers.
 
 A report we can act on has:
 
-- the server version (`npm view @blen/uspto-mcp-server version` if you run it with `npx`,
-  or your git SHA), the transport (stdio or HTTP), the sandbox runner (`isolate` or
+- the server version (the version your MCP client shows for `uspto-mcp-server`, or your
+  git SHA; `npm view` shows the newest release, not the one you run), the transport (stdio or HTTP), the sandbox runner (`isolate` or
   `deno`), your Node version and your MCP client;
 - the exact code you passed to `execute`, or the `search_api` query;
 - the full error envelope (`{ ok, error: { name, message, status }, logs }`);
