@@ -33,6 +33,10 @@ export function tokenize(s: string): string[] {
     .filter(t => !STOP.has(t));
 }
 
+/** '1,102,103' read as statute sections ('102', '103'), only right after a word that introduces them. */
+const STATUTE_LIST = /^\d{1,2},(?:10[123]|112),(?:10[123]|112)$/;
+const STATUTE_INTRO = /(?:\b(?:sections?|secs?|under|usc|u\.s\.c)|§)[\s.]*$/i;
+
 /**
  * Query tokens without the identifiers a question carries ('10,169,987', '17/248,024', '97123456').
  * They say nothing about which method to call, but their pieces match the number-format examples
@@ -48,8 +52,9 @@ export function queryTokens(query: string): string[] {
   // application number starts with a real series code, so '35/102,103' is not one.
   const all = tokenize(query
     .replace(/\b([a-z]{1,2})(\d{1,3}(?:,\d{3})+)(?!\d)/gi, (_, p, n) => p + n.replace(/,/g, ''))
-    .replace(/(?<!(?:\b(?:sections?|secs?|under|usc|u\.s\.c)|§)[\s.]*)(?<!\d)(?:1\d|[1-9]),\d{3},\d{3}(?!\d)/gi, m => m.replace(/,/g, ''))
-    .replace(/\b(0[2-9]|1\d|29|6[0-3]|9[05])\/(\d{3}),?(\d{3})\b/g, '$1$2$3'));
+    .replace(/(?<!\d)(?:1\d|[1-9]),\d{3},\d{3}(?!\d)/g,
+      (m, at: number, q: string) => STATUTE_LIST.test(m) && STATUTE_INTRO.test(q.slice(0, at)) ? m : m.replace(/,/g, ''))
+    .replace(/\b(0[2-9]|1\d|29|6[0-3]|9[0-6])\/(\d{3}),?(\d{3})\b/g, '$1$2$3'));
   const terms = all.filter(t => !/^[a-z]{0,2}-?\d{5,}(?:[a-z]\d?)?$/.test(t));
   // A query that is only an identifier keeps it: something is better than no hits.
   return terms.length ? terms : all;
