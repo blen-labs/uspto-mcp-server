@@ -43,11 +43,13 @@ export function queryTokens(query: string): string[] {
   // 19,999,999) and an application number (17/248,024). '102/103', '101,102,103,112' and
   // 'sections 35,102,103' are lists of statute sections, and those are real terms. A letter
   // prefix (design 'D987,654', 'US10,169,987') is part of the identifier, and so is a kind code
-  // ('US10,169,987B2').
+  // ('US10,169,987B2'). '1,102,103' has a patent number's shape too, so after a word that
+  // introduces statute sections ('sections', 'under', '§', 'U.S.C.') it stays a list. An
+  // application number starts with a real series code, so '35/102,103' is not one.
   const all = tokenize(query
     .replace(/\b([a-z]{1,2})(\d{1,3}(?:,\d{3})+)(?!\d)/gi, (_, p, n) => p + n.replace(/,/g, ''))
-    .replace(/(?<!\d)(?:1\d|[1-9]),\d{3},\d{3}(?!\d)/g, m => m.replace(/,/g, ''))
-    .replace(/\b(\d{2})\/(\d{3}),?(\d{3})\b/g, '$1$2$3'));
+    .replace(/(?<!(?:\b(?:sections?|secs?|under|usc|u\.s\.c)|§)[\s.]*)(?<!\d)(?:1\d|[1-9]),\d{3},\d{3}(?!\d)/gi, m => m.replace(/,/g, ''))
+    .replace(/\b(0[2-9]|1\d|29|6[0-3]|9[05])\/(\d{3}),?(\d{3})\b/g, '$1$2$3'));
   const terms = all.filter(t => !/^[a-z]{0,2}-?\d{5,}(?:[a-z]\d?)?$/.test(t));
   // A query that is only an identifier keeps it: something is better than no hits.
   return terms.length ? terms : all;

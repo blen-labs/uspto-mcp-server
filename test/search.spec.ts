@@ -25,6 +25,9 @@ describe('bm25', () => {
     // Lists of statute sections are terms, however they are punctuated.
     expect(queryTokens('101,102,103,112')).toEqual(['101', '102', '103', '112']);
     expect(queryTokens('sections 35,102,103')).toEqual(['section', '35', '102', '103']);
+    expect(queryTokens('sections 1,102,103 and § 9,102,103')).toEqual(['section', '102', '103', '102', '103']);
+    expect(queryTokens('rejections under 35/102,103')).toEqual(['rejection', 'under', '35', '102', '103']);
+    expect(queryTokens('patent 1,102,103 and patent 9,876,543')).toEqual(['patent', 'patent']);
     // Two patent numbers back to back are still two identifiers.
     expect(queryTokens('patents 10,169,987,11,646,472 and 9,876,543')).toEqual(['patent']);
     // A design patent or a US prefix is still one identifier.
