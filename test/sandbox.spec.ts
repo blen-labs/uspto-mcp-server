@@ -344,7 +344,10 @@ describe('deno runner isolation (gated on availability)', () => {
   it('resolves only after its child process has exited (success, timeout, abort)', async ({ skip }) => {
     if (!(await runner.available())) return skip();
     const { execFileSync } = await import('node:child_process');
-    const count = () => { try { return execFileSync('pgrep', ['-f', 'uspto-deno-.*supervisor.js']).toString().trim().split('\n').filter(Boolean).length; } catch { return 0; } };
+    await run('return 1'); // the supervisor file exists from here on
+    // Only this worker's children: other test files run Deno sandboxes in parallel worker processes.
+    const supervisor = (DenoRunner as unknown as { supervisorPath: string }).supervisorPath;
+    const count = () => { try { return execFileSync('pgrep', ['-f', supervisor]).toString().trim().split('\n').filter(Boolean).length; } catch { return 0; } };
     const before = count();
     await run('return 1');
     expect(count()).toBe(before); // no extra wait: checked the moment execute resolves
