@@ -182,7 +182,7 @@ The most common knobs (full list and defaults in [`.env.example`](./.env.example
 | `USPTO_API_KEY` | — | ODP key. Unset ⇒ `odp` disabled. |
 | `USPTO_TSDR_API_KEY` | — | TSDR key. Unset ⇒ `tsdr` disabled. |
 | `USPTO_SANDBOX` | `auto` | `auto` / `isolate` / `deno` |
-| `USPTO_USER_AGENT` | `uspto-mcp-server/0.1 …` | Identify your deployment. |
+| `USPTO_USER_AGENT` | `uspto-mcp-server/<version> …` | Identify your deployment. |
 | `USPTO_ODP_MAX_CALLS_PER_EXECUTE` / `USPTO_TSDR_MAX_CALLS_PER_EXECUTE` | `50` / `25` | Upstream calls per `execute()` (`CallBudgetExceeded`). |
 | `USPTO_ODP_RATE_PER_HOUR` / `USPTO_TSDR_RATE_PER_HOUR` | `5000` / `3000` | Hourly attempts per configured key (per account in account mode). Must be ≥ 1. |
 | `USPTO_ODP_SUBJECT_RATE_PER_HOUR` / `USPTO_TSDR_SUBJECT_RATE_PER_HOUR` | `1000` / `600` | Per authenticated subject per hour (HTTP only). |

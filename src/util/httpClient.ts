@@ -112,7 +112,7 @@ export class HttpClient {
     this.#defaultHeaders = opts.defaultHeaders ?? {};
     this.#secrets = Object.values(this.#defaultHeaders).filter(v => typeof v === 'string' && v.length >= 8);
     this.baseUrl = opts.baseUrl;
-    this.userAgent = opts.userAgent ?? 'uspto-mcp-server/1.0 (+https://github.com/blen-labs/uspto-mcp-server)';
+    this.userAgent = opts.userAgent ?? 'uspto-mcp-server (+https://github.com/blen-labs/uspto-mcp-server)';
     this.timeoutMs = opts.timeoutMs ?? 30_000;
     this.retries = opts.retries ?? 3;
     this.retry429 = opts.retry429 ?? true;
