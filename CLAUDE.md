@@ -31,7 +31,7 @@ node scripts/mcpb-smoke.mjs <unpacked-bundle-dir>                           # ex
 - CI (`.github/workflows/ci.yml`) runs `pnpm audit --audit-level moderate`, `typecheck`, `lint`, `build`, `test` on Node 24 and 26 with Postgres and Deno and `USPTO_REQUIRE_RUNNERS=1`, plus an npm-package/MCPB smoke job and a Docker job (refuses to start without auth; runs `execute` in the Deno sandbox). The PR template requires the four gates as checkboxes.
 - Sandbox and account tests skip when their dependency is missing (no runner / no `TEST_DATABASE_URL`). `test/required-runners.spec.ts` turns those skips into failures when `USPTO_REQUIRE_RUNNERS=1` (CI), so a green CI run means they actually ran. Locally, a throwaway Postgres works:
   `docker run -d --rm --name uspto-mcp-test-pg -e POSTGRES_PASSWORD=uspto-ci -e POSTGRES_DB=uspto_test -p 127.0.0.1:55432:5432 postgres:16-alpine`
-  then `TEST_DATABASE_URL=postgres://postgres:uspto-ci@127.0.0.1:55432/uspto_test USPTO_REQUIRE_RUNNERS=1 pnpm test` (needs Deno on PATH).
+  then `TEST_DATABASE_URL=postgres://postgres:uspto-ci@127.0.0.1:55432/uspto_test USPTO_REQUIRE_RUNNERS=1 pnpm test` (needs Deno on PATH). If another database already holds 55432, use a free host port in both commands; otherwise the account tests fail with a password error.
 
 ### Environment notes
 

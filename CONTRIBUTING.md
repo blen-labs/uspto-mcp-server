@@ -103,8 +103,7 @@ requests cannot catch a protocol misunderstanding shared by both sides.
 
 ## What needs work
 
-- Live TSDR captures for the trademark field dictionary (needs a TSDR key), and
-  live verification of the `tsdr.*` examples.
+- Live TSDR captures for the trademark field dictionary (needs a TSDR key).
 - Distributed per-key admission for multi-replica deployments (today: one replica).
 - A small Cloudflare Workers deploy target sharing the core logic (today the
   HTTP transport is Node-only).

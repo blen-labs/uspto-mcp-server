@@ -54,7 +54,7 @@ Add the server to your Claude Desktop config (**Settings → Developer → Edit 
 Restart Claude Desktop, then ask in plain language:
 
 > *"Which IPRs have been filed against patent 10,169,987, and how did they end?"*
-> *"Show the office actions and rejection grounds for application 17/248,024."*
+> *"Show the office actions and rejection grounds for application 15/860,939."*
 > *"What's the status of trademark serial number 97123456?"*
 
 Requires **Node.js 24 or 26** (LTS). `npx` downloads and runs the server on demand. If `execute` reports `SandboxUnavailable`, see [Sandbox runtimes](#sandbox-runtimes). A Claude Desktop extension bundle (`.mcpb`) that asks for the keys at install time is built from this repository (`pnpm mcpb:prepare && pnpm mcpb:pack`).
