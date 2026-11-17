@@ -103,8 +103,7 @@ requests cannot catch a protocol misunderstanding shared by both sides.
 
 ## What needs work
 
-- Live TSDR captures for the trademark field dictionary (needs a TSDR key), and
-  live verification of the `tsdr.*` examples.
+- Live TSDR captures for the trademark field dictionary (needs a TSDR key).
 - Distributed per-key admission for multi-replica deployments (today: one replica).
 - A small Cloudflare Workers deploy target sharing the core logic (today the
   HTTP transport is Node-only).
@@ -159,7 +158,9 @@ anywhere and nothing but this workflow on `main` can publish; the job's
 (`.github/dependabot.yml`) proposes updates for npm packages, actions and the
 Docker base images. Patched versions of vulnerable transitive dev dependencies are
 pinned with `overrides:` in `pnpm-workspace.yaml`; remove an entry once its parent
-ships the fix.
+ships the fix. An advisory with no patched release is listed under
+`auditConfig.ignoreGhsas` there (and in `site/pnpm-workspace.yaml`), for dev tooling only:
+`test/audit-exceptions.spec.ts` fails if such a package becomes a production dependency.
 The `files` field in `package.json` ships only `dist/`, `schema/`,
 `README.md`, `LICENSE`, `NOTICE`, `CHANGELOG.md`, and `SECURITY.md`.
 
