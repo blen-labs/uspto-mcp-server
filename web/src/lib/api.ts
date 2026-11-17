@@ -40,3 +40,9 @@ export interface Connection {
   destination: string;
   local: boolean;
 }
+/** Linked Claude billing on the account page; `enabled` is false when the server has it off. */
+export interface ClaudeLinkStatus {
+  enabled: boolean;
+  linked?: boolean;
+  linkedAt?: string;
+}

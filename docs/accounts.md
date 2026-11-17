@@ -147,6 +147,62 @@ The production server assumes one trusted proxy hop, as on Railway.
 - Audit rows record owner, actor, action (`credential.<kind>.saved` /
   `.deleted` / `credential.reencrypted`) and timestamp, never key material.
 
+## Linked Claude billing
+
+Optional, and off unless `USPTO_CLAUDE_LINK_CLIENT_ID` is set. A signed-in user can link
+their own Claude Platform organization on `/account`, through Anthropic's
+[linked billing](https://platform.claude.com/docs/en/manage-claude/oauth-apps/organization-billing-connections)
+(beta). This release only links and unlinks; nothing calls Claude yet.
+
+**Console setup** (once, by an Admin of the operator's Claude organization):
+
+1. An OAuth app with **Bill and link to organizations**, the `billing:attribution` and
+   `offline_access` scopes, and the redirect URI `<origin>/api/portal/claude/callback`.
+2. An issuer under Workload identity with an inline JWK set: the public half of an ES256
+   key with a `kid`, issuer URL `<origin>/claude-link`, single-use tokens (JTI), at most
+   1 hour lifetime. The private key goes in `USPTO_CLAUDE_LINK_SIGNING_JWK` and nowhere else.
+3. The app's client authentication: that issuer, subject exactly `uspto-mcp-server:prod`
+   (audience `https://auth.claude.com`, set by Anthropic).
+4. An operator service account, a dedicated workspace it belongs to (the app's default
+   workspace for connection tokens), and **operator-only tokenless authentication
+   disabled**, so a customer is billed only with their own connection's token.
+5. A federation rule from the same issuer, subject exactly `uspto-mcp-server:operator`,
+   default audience, targeting the service account in that workspace with
+   `workspace:developer`. The server uses it only to create user profiles.
+
+**Settings** (all required once the client ID is set; startup names any that is missing):
+`USPTO_CLAUDE_LINK_CLIENT_ID`, `USPTO_CLAUDE_LINK_SIGNING_JWK`,
+`USPTO_CLAUDE_LINK_ORGANIZATION_ID`, `USPTO_CLAUDE_LINK_SERVICE_ACCOUNT_ID`,
+`USPTO_CLAUDE_LINK_FEDERATION_RULE_ID` (the operator rule), `USPTO_CLAUDE_LINK_WORKSPACE_ID`.
+
+**Flow.** `POST /api/portal/claude/link` creates the user's profile on first use (one per
+account, kept after unlinking; Anthropic sees an opaque reference, never the email), sends
+a pushed authorization request with PKCE, and returns the `auth.claude.com` URL. An Admin
+or Billing member of the user's Claude organization approves and sets a monthly spend
+limit. `GET /api/portal/claude/callback` consumes the state (single use, ten minutes) and
+accepts it only for the same signed-in user and browser session that started it, before
+anything is sent to Anthropic; the result returns to `/account?claude=<result>` as a fixed
+code. A user who is already linked must unlink first (409); if two links started earlier both
+finish, the newer connection replaces the older one, whose ID is stored with it until its
+revocation succeeds. `POST /api/portal/claude/unlink` revokes by user profile (every
+connection of the app on it, so a replaced one too) and then forgets the tokens; if
+Anthropic can't be reached, nothing changes. `GET /api/portal/claude`
+returns `{ enabled, linked, linkedAt? }`.
+
+**Tokens.** Sealed in `claude_links` (AES-GCM, context `claude-link:<owner>`; pending
+verifiers use `claude-link-pending:<owner>`). Every request to Anthropic carries a new
+two-minute assertion with a unique `jti`. A refresh carries no `scope` and runs under a
+per-owner PostgreSQL lock; the new pair is stored before use. Only a lost response (timeout,
+network error, a body that never arrives) is repeated, once and at once, as Anthropic allows
+within 30 seconds. `invalid_grant` forgets the connection (the user links again). A crash
+between Anthropic's answer and the commit leaves the replaced refresh token, so the next
+refresh ends the connection at Anthropic and the user links again; nothing stays billable. Audit actions:
+`claude.link.created`, `.revoked`, `.expired`.
+
+**Limits.** 5 link attempts per minute per user. A user who unlinks in their own Claude
+Console still shows as linked here until the next refresh fails. While the app is in
+testing, only its test users can link, with a spend limit of at most $50 a month.
+
 ## Encryption rotation
 
 Add the new key to `ENCRYPTION_KEYS_JSON`, retaining the old one, and set the new
@@ -156,8 +212,9 @@ active ID. Then run, with the same account environment as the server:
 node dist/bin.js --rotate-keys      # run it where the database is reachable, e.g. inside the deployed service
 ```
 
-It re-encrypts stored credentials in locked batches (`Store.rotateAllKeys`) and
-records a `credential.reencrypted` audit event per row. A row that cannot be opened
+It re-encrypts stored credentials and linked Claude tokens in locked batches
+(`Store.rotateAllKeys`) and records a `credential.reencrypted` (or
+`claude.link.reencrypted`) audit event per row. A row that cannot be opened
 (its key ID is no longer in `ENCRYPTION_KEYS_JSON`, or it is damaged) is skipped
 and recorded as `credential.reencrypt_failed`; rotation continues with the next
 row. The command logs how many rows rotated and which owner and kind failed, never

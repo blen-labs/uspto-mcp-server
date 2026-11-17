@@ -20,6 +20,9 @@ import { gateFor, gateHandle, gateCount } from '../src/accounts/keyGates.js';
 import { LIMIT_DEFAULTS } from '../src/supervisor/index.js';
 import { buildSupervisor, type SupervisorConfig } from '../src/supervisor/index.js';
 import { supervisorCfg } from './helpers.js';
+import { generateKeyPair, exportJWK } from 'jose';
+import { ClaudeLink, loadClaudeLinkConfig, type ClaudeLinkConfig } from '../src/accounts/claudeLink.js';
+import { FakeClaude } from './fakeClaude.js';
 
 it('encrypts keys with random nonces and binds ciphertext to its account and purpose', () => {
   const keys = { old: randomBytes(32), next: randomBytes(32) };
@@ -45,6 +48,28 @@ it('rejects unsafe origins, missing secrets, and unsafe OAuth redirects', () => 
   for (const url of ['http://evil.example/cb', 'javascript:alert(1)', 'https://user:pass@example.com', 'https://example.com/#fragment']) expect(allowedRedirect(url)).toBe(false);
   expect(allowedRedirect('https://claude.ai/api/mcp/auth_callback')).toBe(true);
   expect(allowedRedirect('http://127.0.0.1:1234/cb')).toBe(true);
+});
+
+it('turns linked Claude billing on only with its client ID, then requires every setting', () => {
+  const origin = 'https://uspto.example';
+  const jwk = JSON.stringify({ kty: 'EC', crv: 'P-256', x: 'x', y: 'y', d: 'd', kid: 'k1' });
+  const all = {
+    USPTO_CLAUDE_LINK_CLIENT_ID: 'clid_1', USPTO_CLAUDE_LINK_SIGNING_JWK: jwk, USPTO_CLAUDE_LINK_ORGANIZATION_ID: 'cd4e3d5c-0000',
+    USPTO_CLAUDE_LINK_SERVICE_ACCOUNT_ID: 'svac_1', USPTO_CLAUDE_LINK_FEDERATION_RULE_ID: 'fdrl_1', USPTO_CLAUDE_LINK_WORKSPACE_ID: 'wrkspc_1',
+  };
+  // A signing key alone (as deployed before the feature is switched on) changes nothing.
+  expect(loadClaudeLinkConfig({ USPTO_CLAUDE_LINK_SIGNING_JWK: jwk }, origin)).toBeUndefined();
+  expect(loadClaudeLinkConfig(all, origin)).toMatchObject({
+    clientId: 'clid_1', issuer: `${origin}/claude-link`, redirectUri: `${origin}/api/portal/claude/callback`, workspaceId: 'wrkspc_1',
+  });
+  for (const name of Object.keys(all).filter(n => n !== 'USPTO_CLAUDE_LINK_CLIENT_ID')) {
+    expect(() => loadClaudeLinkConfig({ ...all, [name]: '' }, origin)).toThrow(name);
+  }
+  // A public key, or one without a kid, cannot sign; the error never repeats the key material.
+  const publicOnly = JSON.parse(jwk); delete publicOnly.d;
+  expect(() => loadClaudeLinkConfig({ ...all, USPTO_CLAUDE_LINK_SIGNING_JWK: JSON.stringify(publicOnly) }, origin)).toThrow(/private P-256 JWK/);
+  try { loadClaudeLinkConfig({ ...all, USPTO_CLAUDE_LINK_SIGNING_JWK: '{"d":"secret-material"' }, origin); throw new Error('expected a failure'); }
+  catch (error) { expect(String(error)).not.toContain('secret-material'); }
 });
 
 it('validates each key only at its own USPTO API and preserves safe errors', async () => {
@@ -174,6 +199,9 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
   let helper: ReturnType<ReturnType<typeof testUtils>['init']>['context']['test'];
   let alice: any, bob: any, browser: typeof fetch, other: typeof fetch;
   let validationStatus = 200;
+  let claude: FakeClaude, claudeConfig: ClaudeLinkConfig;
+  const claudeFetch = (async (url: unknown, init?: RequestInit) =>
+    await claude.handle(url, init) ?? new Response(null, { status: validationStatus })) as typeof fetch;
   const schema = `uspto_test_${randomBytes(8).toString('hex')}`;
   const key = 'a'.repeat(32), key2 = 'b'.repeat(32), tsdrKey = 't'.repeat(32);
   const ODP = 'https://api.uspto.gov', TSDR = 'https://tsdrapi.uspto.gov';
@@ -276,13 +304,22 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     config = { origin: `http://127.0.0.1:${(server.address() as any).port}`, production: false,
       databaseUrl: database!, authSecret: randomToken(), googleClientId: 'fixture-google', googleClientSecret: 'fixture-secret', keyring: new Keyring('v1', { v1: randomBytes(32) }),
       clientIpHeader: 'x-real-ip', docsRoot };
+    // Linked Claude billing against a strict fake of auth.claude.com and api.anthropic.com.
+    const { privateKey, publicKey } = await generateKeyPair('ES256', { extractable: true });
+    claudeConfig = {
+      clientId: 'clid_test', signingKey: { ...await exportJWK(privateKey), kid: 'test-kid' },
+      issuer: `${config.origin}/claude-link`, redirectUri: `${config.origin}/api/portal/claude/callback`,
+      organizationId: 'org-test', serviceAccountId: 'svac_test', federationRuleId: 'fdrl_test', workspaceId: 'wrkspc_test',
+    };
+    config.claudeLink = claudeConfig;
+    claude = new FakeClaude(claudeConfig, publicKey);
     const deps = await buildSupervisor(cfg);
     expect(await deps.sandbox.available(), 'Deno is required for account integration tests').toBe(true);
     // Upstream USPTO calls go through an injected MockAgent, never the global dispatcher.
     mock = new MockAgent(); mock.disableNetConnect();
     // The anonymous endpoint gets no shared key here, so USPTO calls there must point to sign-in.
     const publicDeps = publicDependencies(await buildSupervisor(cfg), config.origin); // cfg HAS a shared key: it must stay unused
-    service = await createAccountApp(config, store, accountDependencies(deps, cfg, store, mock), async () => new Response(null, { status: validationStatus }), publicDeps);
+    service = await createAccountApp(config, store, accountDependencies(deps, cfg, store, mock), claudeFetch, publicDeps);
     server.on('request', service.app);
     helper = testUtils().init((await service.auth.$context) as unknown as Parameters<ReturnType<typeof testUtils>['init']>[0]).context.test;
     alice = await helper.saveUser(helper.createUser({ email: 'alice@example.test', emailVerified: true }));
@@ -624,6 +661,126 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     const audit = await pool.query("SELECT action FROM audit_events WHERE tenant='rot:a' AND action='credential.reencrypt_failed'");
     expect(audit.rowCount).toBe(1);
     expect(await after.rotateAllKeys(1)).toMatchObject({ rotated: 0 });
+  });
+  /** Starts a link as `who`, approves it at the fake Claude, and returns the callback URL. */
+  async function startLink(who: typeof fetch) {
+    const started = await send(who, '/api/portal/claude/link', {});
+    expect(started.status, await started.clone().text()).toBe(200);
+    const { code, state } = claude.approve((await started.json() as any).url);
+    return `${config.origin}/api/portal/claude/callback?${new URLSearchParams({ code, state })}`;
+  }
+  const finishLink = async (who: typeof fetch, url: string) => {
+    const r = await who(url, { redirect: 'manual' });
+    expect(r.status).toBe(303);
+    return r.headers.get('location');
+  };
+  const claudeStatus = async (who: typeof fetch) => await (await who(`${config.origin}/api/portal/claude`)).json() as any;
+
+  it('links a Claude organization only for the user and session that started it', async () => {
+    // The callback is a cross-site top-level GET from auth.claude.com: a Lax session cookie rides along, Strict would not.
+    expect((await service.auth.$context).authCookies.sessionToken.attributes.sameSite?.toLowerCase()).toBe('lax');
+    expect(await claudeStatus(browser)).toEqual({ enabled: true, linked: false });
+    expect((await fetch(`${config.origin}/api/portal/claude`)).status).toBe(401);
+    // Bob finishes Alice's link (e.g. an approval link someone sent him): refused before any call to Claude.
+    const aliceLink = await startLink(browser);
+    const exchanges = claude.count('auth.claude.com/v1/oauth/token');
+    expect(await finishLink(other, aliceLink)).toBe('/account?claude=expired');
+    expect(claude.count('auth.claude.com/v1/oauth/token')).toBe(exchanges);
+    // The state was consumed by that attempt, so it is now useless to Alice too.
+    expect(await finishLink(browser, aliceLink)).toBe('/account?claude=expired');
+    expect(await claudeStatus(other)).toEqual({ enabled: true, linked: false });
+    // A denial at Claude also consumes the state.
+    const denied = new URL(await startLink(browser));
+    denied.searchParams.delete('code'); denied.searchParams.set('error', 'access_denied');
+    expect(await finishLink(browser, denied.toString())).toBe('/account?claude=denied');
+    expect(await finishLink(browser, denied.toString())).toBe('/account?claude=expired');
+    // Alice's own link completes; one user profile serves all of her attempts.
+    expect(await finishLink(browser, await startLink(browser))).toBe('/account?claude=linked');
+    expect(await claudeStatus(browser)).toMatchObject({ enabled: true, linked: true });
+    expect(claude.profilesCreated).toBe(1);
+    // Anthropic saw an opaque reference, never her email; the tokens are sealed at rest.
+    const profile = claude.calls.find(c => c.url.endsWith('/v1/user_profiles'))!;
+    expect(JSON.stringify(profile.body)).not.toContain('alice');
+    const row = await pool.query('SELECT ciphertext::text AS sealed FROM claude_links WHERE owner=$1', [personalOwner(alice.id)]);
+    expect(row.rows[0].sealed).not.toMatch(/at-|rt-/);
+    // Only same-origin JSON may start or end a link, and a linked user must unlink first.
+    expect((await send(browser, '/api/portal/claude/link', {}, 'https://evil.example')).status).toBe(403);
+    expect((await send(browser, '/api/portal/claude/link', {})).status).toBe(409);
+  });
+  it('refreshes Claude tokens once under the lock, and forgets a connection Claude ended', async () => {
+    const link = new ClaudeLink(claudeConfig, store, claudeFetch);
+    const owner = personalOwner(alice.id);
+    const first = await link.accessToken(owner);
+    expect(first?.token).toMatch(/^at-/);
+    expect(first?.userProfileId).toBe('uprof_1');
+    // Expire the access token: two concurrent callers share one refresh, and the new pair is stored.
+    await store.withClaudeLink(owner, async (row, save) => save({ tokens: { ...row!.tokens!, accessExpiresAt: 0 } }));
+    const refreshes = () => claude.calls.filter(c => c.body.grant_type === 'refresh_token').length;
+    const before = refreshes();
+    const [a, b] = await Promise.all([link.accessToken(owner), link.accessToken(owner)]);
+    expect(refreshes()).toBe(before + 1);
+    expect(a?.token).toBe(b?.token);
+    expect(a?.token).not.toBe(first?.token);
+    expect(claude.calls.filter(c => c.body.grant_type === 'refresh_token').every(c => !('scope' in c.body))).toBe(true);
+    expect((await link.accessToken(owner))?.token).toBe(a?.token);
+    // A refresh whose response is lost is repeated once at once, with the same refresh token, and the link survives.
+    claude.loseNextRefresh = true;
+    await store.withClaudeLink(owner, async (row, save) => save({ tokens: { ...row!.tokens!, accessExpiresAt: 0 } }));
+    const sent = refreshes();
+    const repeated = await link.accessToken(owner);
+    expect(refreshes()).toBe(sent + 2);
+    expect(repeated?.token).toMatch(/^at-/);
+    expect(await claudeStatus(browser)).toMatchObject({ linked: true });
+    // The customer unlinked in their own Console: the next refresh gets invalid_grant, and the link is forgotten.
+    claude.endConnections();
+    await store.withClaudeLink(owner, async (row, save) => save({ tokens: { ...row!.tokens!, accessExpiresAt: 0 } }));
+    expect(await link.accessToken(owner)).toBeUndefined();
+    expect(await claudeStatus(browser)).toMatchObject({ linked: false });
+  });
+  it('revokes the older connection when two links started earlier both finish, even if that revocation fails', async () => {
+    const connectionOf = async () => (await pool.query('SELECT connection_id, stale_connection_ids FROM claude_links WHERE owner=$1', [personalOwner(bob.id)])).rows[0];
+    const [first, second, third] = [await startLink(other), await startLink(other), await startLink(other)];
+    expect(await finishLink(other, first)).toBe('/account?claude=linked');
+    const one = (await connectionOf()).connection_id;
+    expect(await finishLink(other, second)).toBe('/account?claude=linked');
+    expect(claude.calls.at(-1)).toMatchObject({ url: 'https://auth.claude.com/v1/oauth/revoke', body: { connection_id: one } });
+    expect(claude.active.has(one)).toBe(false);
+    expect((await connectionOf()).stale_connection_ids).toEqual([]);
+    // The revocation of the replaced connection fails: its ID is kept, and Unlink still ends it.
+    const two = (await connectionOf()).connection_id;
+    claude.failNextRevoke = true;
+    expect(await finishLink(other, third)).toBe('/account?claude=linked');
+    expect(claude.active.has(two)).toBe(true);
+    expect((await connectionOf()).stale_connection_ids).toEqual([two]);
+    expect((await send(other, '/api/portal/claude/unlink', {})).status).toBe(200);
+    expect(claude.calls.at(-1)!.body).toMatchObject({ user_profile_id: expect.stringMatching(/^uprof_/) });
+    expect([...claude.active.keys()].filter(id => id === two || id === (one as string))).toEqual([]);
+    expect(await connectionOf()).toEqual({ connection_id: null, stale_connection_ids: [] });
+  });
+  it('unlinks at Claude, keeps the user profile, and links again without a new one', async () => {
+    await pool.query('DELETE FROM request_limits'); // the earlier tests used up Alice's 5 link attempts a minute
+    const profiles = claude.profilesCreated;
+    expect(await finishLink(browser, await startLink(browser))).toBe('/account?claude=linked');
+    const revokes = claude.count('/v1/oauth/revoke');
+    const unlinked = await send(browser, '/api/portal/claude/unlink', {});
+    expect(unlinked.status, await unlinked.clone().text()).toBe(200);
+    expect(claude.count('/v1/oauth/revoke')).toBe(revokes + 1);
+    expect(claude.calls.at(-1)!.body.user_profile_id).toMatch(/^uprof_/);
+    expect(await claudeStatus(browser)).toMatchObject({ linked: false });
+    expect(await finishLink(browser, await startLink(browser))).toBe('/account?claude=linked');
+    expect(claude.profilesCreated).toBe(profiles);
+    const audit = await pool.query("SELECT action FROM audit_events WHERE tenant=$1 AND action LIKE 'claude.link.%' ORDER BY id", [personalOwner(alice.id)]);
+    expect(audit.rows.map(r => r.action)).toEqual(['claude.link.created', 'claude.link.expired', 'claude.link.created', 'claude.link.revoked', 'claude.link.created']);
+  });
+  it('re-encrypts linked Claude tokens during key rotation', async () => {
+    const k1 = randomBytes(32), k2 = randomBytes(32);
+    const before = new Store(pool, new Keyring('k1', { k1 }));
+    await before.withClaudeLink('rotc:a', async (_row, save) => save({ userProfileId: 'uprof_rot', connectionId: 'ocon_rot', tokens: { accessToken: 'at-rot', accessExpiresAt: Date.now() + 3_600_000 } }));
+    const after = new Store(pool, new Keyring('k2', { k1, k2 }));
+    await after.rotateAllKeys(1);
+    const kid = await pool.query("SELECT ciphertext->>'kid' AS kid FROM claude_links WHERE owner='rotc:a'");
+    expect(kid.rows[0].kid).toBe('k2');
+    expect(await after.withClaudeLink('rotc:a', async row => row?.tokens?.accessToken)).toBe('at-rot');
   });
   it('rotates refresh tokens and honors access token revocation', async () => {
     const a = await token();

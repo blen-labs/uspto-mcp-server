@@ -8,6 +8,7 @@ import type { Auth } from './provider.js';
 import { log } from '../util/logger.js';
 import { gateFor } from './keyGates.js';
 import { parseRetryAfter } from '../util/httpClient.js';
+import { ClaudeLink, type LinkResult } from './claudeLink.js';
 
 /**
  * Each key goes only to its own fixed upstream; no URL, owner or user ID comes from the form.
@@ -65,6 +66,7 @@ export function installPortal(
   app: Express, config: AccountConfig, store: Store, auth: Auth, fetcher: typeof fetch,
   ipOf: (req: Request) => string | undefined,
 ) {
+  const claude = config.claudeLink && new ClaudeLink(config.claudeLink, store, fetcher);
   const api = express.Router();
   api.use(express.json({ limit: '8kb' }));
   api.use((req, res, next) => {
@@ -201,6 +203,47 @@ export function installPortal(
     const query = await validQuery(req.body?.oauth_query);
     if (!query || typeof req.body?.accept !== 'boolean') return error(res, 400, 'Connection authorization failed.');
     return continueWith(req, res, '/oauth2/consent', { oauth_query: query, accept: req.body.accept });
+  });
+  // Linked Claude billing (claudeLink.ts). Off unless configured: every route then answers 404.
+  api.get('/claude', async (req, res) => {
+    const logged = await verified(req);
+    if (!logged) return error(res, 401, 'Sign in to continue.');
+    if (!claude) return res.json({ enabled: false });
+    res.json({ enabled: true, ...await claude.status(personalOwner(logged.user.id)) });
+  });
+  api.post('/claude/link', async (req, res) => {
+    const logged = await verified(req);
+    if (!logged) return error(res, 401, 'Sign in to continue.');
+    if (!claude) return error(res, 404, 'Not found.');
+    const owner = personalOwner(logged.user.id);
+    if (!await store.allow(`claude-link:${owner}`, 5, 60)) return error(res, 429, 'Too many attempts. Try again in one minute.');
+    // A second connection would replace the first without revoking it, leaving it billable at Anthropic.
+    if ((await claude.status(owner)).linked) return error(res, 409, 'Your Claude organization is already linked. Unlink it first.');
+    try { res.json({ url: await claude.start(owner, logged.session.id) }); }
+    catch { error(res, 502, 'Claude could not start the link. Try again later.'); }
+  });
+  // auth.claude.com sends the browser here (a top-level GET, so the Lax session cookie comes
+  // along). The result goes back to the account page as a fixed code, never as Anthropic's text.
+  api.get('/claude/callback', async (req, res) => {
+    const done = (result: LinkResult | 'signin') => res.redirect(303, `/account?claude=${result}`);
+    if (!claude) return error(res, 404, 'Not found.');
+    const logged = await verified(req);
+    if (!logged) return done('signin');
+    const param = (name: string) => typeof req.query[name] === 'string' ? req.query[name] : undefined;
+    try {
+      done(await claude.finish(personalOwner(logged.user.id), logged.session.id,
+        { code: param('code'), state: param('state'), error: param('error') }));
+    } catch { done('failed'); }
+  });
+  api.post('/claude/unlink', async (req, res) => {
+    const logged = await verified(req);
+    if (!logged) return error(res, 401, 'Sign in to continue.');
+    if (!claude) return error(res, 404, 'Not found.');
+    if (Object.keys(req.body ?? {}).length) return error(res, 400, 'Send an empty JSON object.');
+    try {
+      if (await claude.unlink(personalOwner(logged.user.id))) return res.json({ unlinked: true });
+    } catch { /* reported by ClaudeLink */ }
+    error(res, 502, 'Claude could not end the link right now. Nothing changed; try again later.');
   });
   app.use('/api/portal', api);
 }

@@ -14,6 +14,14 @@ const context = (kind: KeyKind, owner: string) => `uspto-${kind}:${owner}`;
 
 export interface KeyStatus { connected: boolean; updatedAt?: Date }
 
+/** A linked Claude connection's OAuth tokens (sealed at rest; see claudeLink.ts). Times are epoch ms. */
+export interface ClaudeTokens { accessToken: string; accessExpiresAt: number; refreshToken?: string; refreshExpiresAt?: number }
+export interface ClaudeLinkRow { userProfileId: string; connectionId: string | null; staleConnectionIds: string[]; tokens?: ClaudeTokens }
+export type ClaudeLinkChanges = { userProfileId?: string; connectionId?: string | null; staleConnectionIds?: string[]; tokens?: ClaudeTokens | null };
+/** Encryption contexts: a ciphertext opens only for its own owner and purpose, never as a USPTO key. */
+const claudeContext = (owner: string) => `claude-link:${owner}`;
+const claudePendingContext = (owner: string) => `claude-link-pending:${owner}`;
+
 /** Position in (owner, kind) order: rotation resumes after it. */
 export interface RotationCursor { owner: string; kind: string }
 
@@ -46,6 +54,15 @@ export class Store {
       CREATE TABLE IF NOT EXISTS audit_events (
         id BIGSERIAL PRIMARY KEY, tenant TEXT NOT NULL, actor TEXT NOT NULL,
         action TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE TABLE IF NOT EXISTS claude_links (
+        owner TEXT PRIMARY KEY, user_profile_id TEXT NOT NULL, connection_id TEXT,
+        stale_connection_ids TEXT[] NOT NULL DEFAULT '{}',
+        ciphertext JSONB, updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE TABLE IF NOT EXISTS claude_link_pending (
+        state TEXT PRIMARY KEY, owner TEXT NOT NULL, session_id TEXT NOT NULL,
+        ciphertext JSONB NOT NULL, expires_at TIMESTAMPTZ NOT NULL
       );
       `);
       await client.query('COMMIT');
@@ -117,6 +134,71 @@ export class Store {
     } finally {
       client.release();
     }
+  }
+  async audit(tenant: string, actor: string, action: string) {
+    await this.pool.query('INSERT INTO audit_events(tenant,actor,action) VALUES($1,$2,$3)', [tenant, actor, action]);
+  }
+  /**
+   * Runs `fn` holding the owner's linked-billing lock, inside one transaction: two requests or
+   * two server instances never create two user profiles or spend one refresh token twice.
+   * `save` merges changes into the row; nothing is written if `fn` throws.
+   */
+  async withClaudeLink<T>(owner: string, fn: (row: ClaudeLinkRow | undefined, save: (changes: ClaudeLinkChanges) => Promise<void>) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query("SET LOCAL lock_timeout = '15s'");
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`claude-link:${owner}`]);
+      const result = await client.query('SELECT user_profile_id,connection_id,stale_connection_ids,ciphertext FROM claude_links WHERE owner=$1', [owner]);
+      const found = result.rows[0] as { user_profile_id: string; connection_id: string | null; stale_connection_ids: string[]; ciphertext: Sealed | null } | undefined;
+      let row: ClaudeLinkRow | undefined = found && {
+        userProfileId: found.user_profile_id, connectionId: found.connection_id, staleConnectionIds: found.stale_connection_ids,
+        ...(found.ciphertext ? { tokens: JSON.parse(this.keyring.open(found.ciphertext, claudeContext(owner))) as ClaudeTokens } : {}),
+      };
+      const save = async (changes: ClaudeLinkChanges) => {
+        const userProfileId = changes.userProfileId ?? row?.userProfileId;
+        if (!userProfileId) throw new Error('A Claude link needs a user profile');
+        const connectionId = changes.connectionId !== undefined ? changes.connectionId : row?.connectionId ?? null;
+        const tokens = changes.tokens !== undefined ? changes.tokens ?? undefined : row?.tokens;
+        const staleConnectionIds = changes.staleConnectionIds ?? row?.staleConnectionIds ?? [];
+        await client.query(
+          `INSERT INTO claude_links(owner,user_profile_id,connection_id,stale_connection_ids,ciphertext) VALUES($1,$2,$3,$4,$5)
+          ON CONFLICT(owner) DO UPDATE SET user_profile_id=$2,connection_id=$3,stale_connection_ids=$4,ciphertext=$5,updated_at=now()`,
+          [owner, userProfileId, connectionId, staleConnectionIds, tokens ? this.keyring.seal(JSON.stringify(tokens), claudeContext(owner)) : null],
+        );
+        row = { userProfileId, connectionId, staleConnectionIds, ...(tokens ? { tokens } : {}) };
+      };
+      const value = await fn(row, save);
+      await client.query('COMMIT');
+      return value;
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  async claudeLinkStatus(owner: string): Promise<{ linked: boolean; updatedAt: Date } | undefined> {
+    const result = await this.pool.query(
+      'SELECT (connection_id IS NOT NULL AND ciphertext IS NOT NULL) AS linked, updated_at FROM claude_links WHERE owner=$1', [owner]);
+    const found = result.rows[0] as { linked: boolean; updated_at: Date } | undefined;
+    return found && { linked: found.linked, updatedAt: found.updated_at };
+  }
+  /** A started link: its PKCE verifier, bound to the owner and browser session, for ten minutes. */
+  async saveClaudePending(state: string, owner: string, sessionId: string, verifier: string) {
+    await this.pool.query(
+      `INSERT INTO claude_link_pending(state,owner,session_id,ciphertext,expires_at) VALUES($1,$2,$3,$4,now()+interval '10 minutes')`,
+      [state, owner, sessionId, this.keyring.seal(verifier, claudePendingContext(owner))],
+    );
+  }
+  /** Consumes a started link (single use, whatever happens next). Undefined if unknown or expired. */
+  async takeClaudePending(state: string): Promise<{ owner: string; sessionId: string; verifier: string } | undefined> {
+    const result = await this.pool.query(
+      'DELETE FROM claude_link_pending WHERE state=$1 RETURNING owner,session_id,ciphertext,(expires_at>now()) AS live', [state]);
+    const found = result.rows[0] as { owner: string; session_id: string; ciphertext: Sealed; live: boolean } | undefined;
+    if (!found?.live) return undefined;
+    try { return { owner: found.owner, sessionId: found.session_id, verifier: this.keyring.open(found.ciphertext, claudePendingContext(found.owner)) }; }
+    catch { return undefined; }
   }
   async markConnectionReady(sessionId: string, userId: string) {
     await this.pool.query(
@@ -208,10 +290,52 @@ export class Store {
       failed.push(...batch.failed);
       cursor = batch.next;
     } while (cursor);
+    // Linked Claude tokens too (a refresh token lives up to a year). Pending links last ten minutes and are not rotated.
+    let after: string | undefined;
+    do {
+      const batch = await this.rotateClaudeLinks(batchSize, after);
+      rotated += batch.rotated;
+      failed.push(...batch.failed);
+      after = batch.next;
+    } while (after);
     return { rotated, failed };
+  }
+  private async rotateClaudeLinks(batchSize: number, after?: string): Promise<{ rotated: number; failed: RotationCursor[]; next?: string }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const rows = await client.query(
+        `SELECT owner,ciphertext FROM claude_links WHERE ciphertext IS NOT NULL AND ciphertext->>'kid' IS DISTINCT FROM $1
+         AND ($3::text IS NULL OR owner > $3::text) ORDER BY owner LIMIT $2 FOR UPDATE`,
+        [this.keyring.activeId, batchSize, after ?? null],
+      );
+      let rotated = 0;
+      const failed: RotationCursor[] = [];
+      for (const row of rows.rows as { owner: string; ciphertext: Sealed }[]) {
+        let sealed;
+        try { sealed = this.keyring.seal(this.keyring.open(row.ciphertext, claudeContext(row.owner)), claudeContext(row.owner)); }
+        catch {
+          failed.push({ owner: row.owner, kind: 'claude' });
+          await client.query('INSERT INTO audit_events(tenant,actor,action) VALUES($1,$2,$3)', [row.owner, 'service-operator', 'claude.link.reencrypt_failed']);
+          continue;
+        }
+        await client.query('UPDATE claude_links SET ciphertext=$2 WHERE owner=$1', [row.owner, sealed]);
+        await client.query('INSERT INTO audit_events(tenant,actor,action) VALUES($1,$2,$3)', [row.owner, 'service-operator', 'claude.link.reencrypted']);
+        rotated++;
+      }
+      await client.query('COMMIT');
+      const last = rows.rows.at(-1) as { owner: string } | undefined;
+      return { rotated, failed, next: rows.rows.length === batchSize && last ? last.owner : undefined };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
   async cleanup() {
     await this.pool.query('DELETE FROM request_limits WHERE expires_at<now()');
     await this.pool.query('DELETE FROM connection_steps WHERE expires_at<now()');
+    await this.pool.query('DELETE FROM claude_link_pending WHERE expires_at<now()');
   }
 }
