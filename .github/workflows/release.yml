@@ -80,7 +80,9 @@ jobs:
           # as many of those lines as the sources (tsc keeps the marker comments).
           v=$(node -p 'require("./package.json").version')
           built=$(grep -rh --include='*.js' 'x-release-version' dist || true)
-          [ "$(printf '%s' "$built" | grep -c .)" -eq "$(grep -rh 'x-release-version' src | grep -c .)" ] \
+          sources=$(grep -rh 'x-release-version' src | grep -c . || true)
+          [ "$sources" -gt 0 ] || { echo "::error::no x-release-version line in src/"; exit 1; }
+          [ "$(printf '%s' "$built" | grep -c . || true)" -eq "$sources" ] \
             || { echo "::error::dist/ has a different number of x-release-version lines than src/"; exit 1; }
           stale=$(printf '%s\n' "$built" | grep -vF "'$v'" || true)
           [ -z "$stale" ] || { echo "::error::stamped lines without $v: $stale"; exit 1; }
