@@ -12,6 +12,22 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 
 
 
+
+## [0.2.5] - 2026-11-17
+
+### Fixed
+- fail when the sources carry no version marker at all (release)
+- find every stamped line in the build and match the source count (release)
+- verify every stamped version line, as a fixed string (release)
+- check the stamped version where #17 moved it (release)
+- report MemoryLimitExceeded for a full heap in both runners (sandbox)
+- refuse unknown options and send the real release in the User-Agent (cli)
+- answer whole user questions and correct the tsdr.documentInfo example (search)
+- point the ODP key link to data.uspto.gov/apikey (docs)
+
+### Changed
+- count only this worker's Deno children in the lifecycle test (sandbox)
+- ignore the dev-only picomatch advisory until a fix ships (deps)
 ## [0.2.4] - 2026-11-16
 
 ### Fixed
@@ -105,7 +121,8 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 - Docker image (Node 24 + Deno), an MCPB bundle (manifest v0.4) that prompts for keys, and
   third-party license notices in every artifact.
 
-[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.1...v0.2.2
