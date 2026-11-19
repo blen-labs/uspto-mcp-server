@@ -13,10 +13,9 @@ overrides:
   'eslint>minimatch': ^11.0.1
   '@eslint/config-array>minimatch': ^11.0.1
 
-# Advisories with no patched release, in dev tooling only. Remove an entry once a fix ships.
-auditConfig:
-  ignoreGhsas:
-    # picomatch <= 4.0.7 ReDoS on crafted extglobs. Reached only through vite, vitest and
-    # typescript-eslint (tinyglobby), which match our own config globs, never user input;
-    # `pnpm audit --prod` is clean. Added 2026-11-17, when no fixed picomatch existed.
-    - GHSA-fc5q-39xc-vjpf
+# Advisories with no patched release, in dev tooling only, are listed as
+#   auditConfig:
+#     ignoreGhsas:
+#       - GHSA-xxxx-xxxx-xxxx   # why it cannot reach users; date added
+# each with a case in test/audit-exceptions.spec.ts. The scheduled security workflow fails once
+# an entry is withdrawn or gets a fix (scripts/check-audit-exceptions.mjs); then remove it.
