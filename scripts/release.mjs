@@ -49,9 +49,12 @@ if (!lastTag) {
 // ASCII record/field separators, emitted by git via %x1e/%x1f so no raw
 // control characters live in this file. Each record is subject, body, then the
 // commit's changed paths (--name-only prints them after the format line).
+// --no-renames lists both sides of a rename: with rename detection, git would
+// print only the destination, so moving a shipped file out (schema/ -> docs/)
+// would look like a change to unshipped paths only.
 const RECORD = '\x1e';
 const FIELD = '\x1f';
-const raw = git('log', `${lastTag}..HEAD`, '--no-merges', '--name-only', '--format=%x1e%s%x1f%b%x1f');
+const raw = git('log', `${lastTag}..HEAD`, '--no-merges', '--no-renames', '--name-only', '--format=%x1e%s%x1f%b%x1f');
 const commits = raw
   .split(RECORD)
   .map(r => r.trim())

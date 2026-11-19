@@ -208,6 +208,8 @@ type NextCommit = {
   files?: Record<string, string>;
   /** edits package.json in place before the commit. */
   pkg?: (pkg: Record<string, any>) => void;
+  /** `git mv` these [from, to] paths in the commit. */
+  mv?: [string, string];
 };
 
 describe('release.mjs against disposable repositories', () => {
@@ -225,12 +227,15 @@ describe('release.mjs against disposable repositories', () => {
     for (const f of ['release.mjs', 'release-lib.mjs']) cpSync(join(root, 'scripts', f), join(dir, 'scripts', f));
     for (const f of ['src/server/mcpServer.ts', 'src/sdk/bindings.ts']) { mkdirSync(join(dir, f, '..'), { recursive: true }); cpSync(join(root, f), join(dir, f)); }
     const git = (...a: string[]) => execFileSync('git', a, { cwd: dir, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } });
+    // A shipped file the release itself never rewrites (the marker files above it does).
+    mkdirSync(join(dir, 'schema')); writeFileSync(join(dir, 'schema/odp.json'), '{"entries": []}\n');
     git('init', '-q', '-b', 'main'); git('add', '.'); git('commit', '-qm', 'feat: initial');
     if (tagged) {
       git('tag', `v${declared}`);
       const commits = (Array.isArray(next) ? next : [next]).map(n => (typeof n === 'string' ? { subject: n } : n));
       commits.forEach((n, i) => {
-        for (const [path, content] of Object.entries(n.files ?? { [`x${i}.txt`]: 'x' })) {
+        if (n.mv) { mkdirSync(dirname(join(dir, n.mv[1])), { recursive: true }); git('mv', ...n.mv); }
+        for (const [path, content] of Object.entries(n.files ?? (n.mv ? {} : { [`x${i}.txt`]: 'x' }))) {
           mkdirSync(dirname(join(dir, path)), { recursive: true });
           writeFileSync(join(dir, path), content);
         }
@@ -320,6 +325,13 @@ describe('release.mjs against disposable repositories', () => {
       const { declared, outputs } = await run(true, next);
       expect(outputs, next.subject).toMatchObject({ released: 'true', bump: 'patch', version: patchOf(declared) });
     }
+  });
+
+  // git log's rename detection would list only the destination (test/), hiding the shipped source.
+  it('moving a shipped file to an unshipped path releases', async () => {
+    const { declared, outputs, log } = await run(true, { subject: 'test: reuse the corpus as a fixture', mv: ['schema/odp.json', 'test/fixtures/odp.json'] });
+    expect(outputs).toMatchObject({ released: 'true', bump: 'patch', version: patchOf(declared) });
+    expect(log).toContain('schema/odp.json changed by');
   });
 
   it('skipped commits ship with the next release and appear in its CHANGELOG section', async () => {
