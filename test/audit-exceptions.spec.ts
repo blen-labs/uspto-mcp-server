@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { failingAdvisories, ignoredGhsas, staleExceptions, stripAuditConfig } from '../scripts/security-audit.mjs';
+import { AuditUnavailable, checkRoot, failingAdvisories, ghsasInWorkspace, ignoredGhsas, isServiceError, staleExceptions, stripAuditConfig } from '../scripts/security-audit.mjs';
 
 // `auditConfig.ignoreGhsas` in pnpm-workspace.yaml skips an advisory on every dependency path:
 // pnpm cannot limit it to dev tooling. Each root entry needs a row here naming the package it
@@ -66,10 +66,36 @@ describe('security-audit', () => {
   ].join('\n');
   const flow = "overrides: {'a>b': ^1.0.0}\nauditConfig: { ignoreGhsas: [GHSA-aaaa-bbbb-cccc, \"GHSA-dddd-eeee-ffff\"] }\n";
 
-  it.each([['block', block], ['flow', flow]])('reads %s-style exceptions the way pnpm does', (_style, yaml) => {
+  it.each([['block', block], ['flow', flow]])('reads %s-style exceptions from the file', (_style, yaml) => {
+    expect(ghsasInWorkspace(yaml)).toEqual(['GHSA-aaaa-bbbb-cccc', 'GHSA-dddd-eeee-ffff']);
+    // ignoredGhsas adds pnpm's own answer, which may be null on some machines, never removes.
     withWorkspace(yaml, dir => {
       expect(ignoredGhsas(dir)).toEqual(['GHSA-aaaa-bbbb-cccc', 'GHSA-dddd-eeee-ffff']);
     });
+  });
+
+  it('ignores GHSA ids in comments and in other keys', () => {
+    const yaml = [
+      'overrides:',
+      "  'a>b': ^1.0.0 # GHSA-1111-2222-3333",
+      '# auditConfig: { ignoreGhsas: [GHSA-4444-5555-6666] }',
+      'auditConfig:',
+      '  ignoreGhsas:',
+      '    # - GHSA-7777-8888-9999',
+      '    - GHSA-aaaa-bbbb-cccc # GHSA-dddd-eeee-ffff mentioned in a note',
+      '',
+    ].join('\n');
+    expect(ghsasInWorkspace(yaml)).toEqual(['GHSA-aaaa-bbbb-cccc']);
+  });
+
+  it('counts exceptions set in package.json too', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'audit-spec-'));
+    try {
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0', private: true, pnpm: { auditConfig: { ignoreGhsas: ['GHSA-aaaa-bbbb-cccc'] } } }));
+      expect(ignoredGhsas(dir)).toEqual(['GHSA-aaaa-bbbb-cccc']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it.each([['block', block], ['flow', flow]])('strips %s-style auditConfig so pnpm mutes nothing', (_style, yaml) => {
@@ -91,6 +117,44 @@ describe('security-audit', () => {
       },
     };
     expect(failingAdvisories(audit)).toEqual(['GHSA-2222-2222-2222 (moderate) in b: real']);
+  });
+
+  it('treats only registry and network errors as an outage', () => {
+    expect(isServiceError({ code: 'ECONNREFUSED' })).toBe(true);
+    expect(isServiceError({ code: 'ETIMEDOUT' })).toBe(true);
+    expect(isServiceError({ code: 'ERR_PNPM_AUDIT_BAD_RESPONSE' })).toBe(true);
+    expect(isServiceError({ code: 'ERR_PNPM_AUDIT_NO_LOCKFILE' })).toBe(false);
+    expect(isServiceError(undefined)).toBe(false);
+  });
+
+  it('exits 1 for a broken checkout, and findings outrank an outage elsewhere', () => {
+    const script = join(process.cwd(), 'scripts/security-audit.mjs');
+    // No lockfile: a person has to act, so 1 (not 2, which would retry and open no issue).
+    withWorkspace('overrides: {}\n', dir => {
+      const env = { ...process.env, npm_config_registry: 'http://127.0.0.1:9/', npm_config_fetch_retries: '0' };
+      expect(spawnSync('node', [script, dir], { encoding: 'utf8', env }).status).toBe(1);
+      // The repository root against an unreachable registry is an outage on its own (2) ...
+      expect(spawnSync('node', [script, '.'], { encoding: 'utf8', env }).status).toBe(2);
+      // ... but together with the broken checkout the result stays 1.
+      expect(spawnSync('node', [script, '.', dir], { encoding: 'utf8', env }).status).toBe(1);
+    });
+  });
+
+  it('keeps findings from the first audit when the exception check fails', () => {
+    withWorkspace('auditConfig:\n  ignoreGhsas:\n    - GHSA-aaaa-bbbb-cccc\n', dir => {
+      let calls = 0;
+      const runAudit = () => {
+        calls += 1;
+        if (calls === 1) {
+          return { advisories: { '1': { github_advisory_id: 'GHSA-2222-2222-2222', severity: 'high', module_name: 'b', title: 'real' } } };
+        }
+        throw new AuditUnavailable('registry timed out');
+      };
+      const result = checkRoot(dir, { runAudit });
+      expect(calls).toBe(2);
+      expect(result.problems).toEqual(['GHSA-2222-2222-2222 (high) in b: real']);
+      expect(result.error).toBeInstanceOf(AuditUnavailable);
+    });
   });
 
   it('keeps an exception whose advisory is still reported without a fix', () => {
