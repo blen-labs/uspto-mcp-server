@@ -146,8 +146,6 @@ We track advisories on direct runtime dependencies — `@modelcontextprotocol/se
 `@modelcontextprotocol/node`, `undici`, `jose`, `acorn`, `lru-cache`, `zod`,
 `express`, `better-auth`, `pg`, and the optional `isolated-vm` — plus the Deno
 runtime pinned in the Docker image. CI fails on any known advisory
-(`pnpm audit --audit-level moderate`, dev dependencies included); the same audit
-runs daily on `main` (`.github/workflows/security.yml`) and opens a tracking issue
-when a new advisory appears. Dependabot proposes security updates as soon as an
-alert opens and version updates weekly. For an advisory that affects this server, expect a patch
+(`pnpm audit --audit-level moderate`, dev dependencies included), and Dependabot
+proposes updates weekly. For an advisory that affects this server, expect a patch
 release within the timeline above.
