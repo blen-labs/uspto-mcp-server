@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AuditUnavailable, checkRoot, failingAdvisories, ignoredGhsas, isServiceError, staleExceptions, stripAuditConfig } from '../scripts/security-audit.mjs';
+import { AuditUnavailable, checkRoot, failingAdvisories, ghsasInWorkspace, ignoredGhsas, isServiceError, staleExceptions, stripAuditConfig } from '../scripts/security-audit.mjs';
 
 // `auditConfig.ignoreGhsas` in pnpm-workspace.yaml skips an advisory on every dependency path:
 // pnpm cannot limit it to dev tooling. Each root entry needs a row here naming the package it
@@ -66,10 +66,36 @@ describe('security-audit', () => {
   ].join('\n');
   const flow = "overrides: {'a>b': ^1.0.0}\nauditConfig: { ignoreGhsas: [GHSA-aaaa-bbbb-cccc, \"GHSA-dddd-eeee-ffff\"] }\n";
 
-  it.each([['block', block], ['flow', flow]])('reads %s-style exceptions the way pnpm does', (_style, yaml) => {
+  it.each([['block', block], ['flow', flow]])('reads %s-style exceptions from the file', (_style, yaml) => {
+    expect(ghsasInWorkspace(yaml)).toEqual(['GHSA-aaaa-bbbb-cccc', 'GHSA-dddd-eeee-ffff']);
+    // ignoredGhsas adds pnpm's own answer, which may be null on some machines, never removes.
     withWorkspace(yaml, dir => {
       expect(ignoredGhsas(dir)).toEqual(['GHSA-aaaa-bbbb-cccc', 'GHSA-dddd-eeee-ffff']);
     });
+  });
+
+  it('ignores GHSA ids in comments and in other keys', () => {
+    const yaml = [
+      'overrides:',
+      "  'a>b': ^1.0.0 # GHSA-1111-2222-3333",
+      '# auditConfig: { ignoreGhsas: [GHSA-4444-5555-6666] }',
+      'auditConfig:',
+      '  ignoreGhsas:',
+      '    # - GHSA-7777-8888-9999',
+      '    - GHSA-aaaa-bbbb-cccc # GHSA-dddd-eeee-ffff mentioned in a note',
+      '',
+    ].join('\n');
+    expect(ghsasInWorkspace(yaml)).toEqual(['GHSA-aaaa-bbbb-cccc']);
+  });
+
+  it('counts exceptions set in package.json too', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'audit-spec-'));
+    try {
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0', private: true, pnpm: { auditConfig: { ignoreGhsas: ['GHSA-aaaa-bbbb-cccc'] } } }));
+      expect(ignoredGhsas(dir)).toEqual(['GHSA-aaaa-bbbb-cccc']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it.each([['block', block], ['flow', flow]])('strips %s-style auditConfig so pnpm mutes nothing', (_style, yaml) => {

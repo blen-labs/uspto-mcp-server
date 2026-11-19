@@ -12,6 +12,7 @@ export interface AuditReport {
 }
 
 export declare function stripAuditConfig(yamlText: string): string;
+export declare function ghsasInWorkspace(yamlText: string): string[];
 export declare function failingAdvisories(audit: AuditReport): string[];
 export declare function staleExceptions(ghsas: string[], audit: AuditReport): string[];
 export declare function ignoredGhsas(dir: string): string[];
