@@ -137,8 +137,11 @@ jobs:
           # one-off header, never stored in .git/config, and repository hooks are disabled.
           auth=$(printf 'x-access-token:%s' "$APP_TOKEN" | base64 -w0)
           echo "::add-mask::${auth}" # the base64 form is not covered by the token's own mask
+          # --atomic: the tag and main land together or not at all. Without it, a run that lost
+          # the race to a newer push left its tag behind on a commit that never reached main,
+          # and every later run then failed with "tag already exists".
           git -c core.hooksPath=/dev/null -c http.https://github.com/.extraheader="AUTHORIZATION: basic ${auth}" \
-            push "https://github.com/${REPO}.git" HEAD:main --follow-tags
+            push --atomic "https://github.com/${REPO}.git" HEAD:main "refs/tags/v${VERSION}"
           gh release create "v${VERSION}" --title "v${VERSION}" --notes-file "${NOTES_FILE}" blen-uspto-mcp-server-*.tgz uspto-mcp-server.mcpb
 
   publish:
