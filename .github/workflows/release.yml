@@ -1,10 +1,15 @@
 name: release
 
-# Continuous release: every push to main is released, after the complete CI gates pass on that
-# exact commit. scripts/release.mjs computes the next SemVer from the conventional commits since
-# the last tag (breaking -> major, feat -> minor, anything else -> patch; the first release of a
-# repository with no tags publishes the version package.json declares), stamps package.json and
-# the x-release-version markers, and writes the CHANGELOG section.
+# Continuous release: every push to main that can change what users install is released, after
+# the complete CI gates pass on that exact commit. scripts/release.mjs first decides whether the
+# commits since the last tag need a release: a range of only build/chore/ci/docs/style/test
+# commits that touch no shipped path (src/, web/, schema/, ...), no shipped package.json field and
+# no production dependency in the lockfile (the MCPB bundle installs it) reports released=false,
+# and nothing is tagged or published; those commits ship with the next release (or now, via a
+# `force` dispatch). Otherwise it computes the next SemVer (breaking ->
+# major, feat -> minor, anything else -> patch; the first release of a repository with no tags
+# publishes the version package.json declares), stamps package.json and the x-release-version
+# markers, and writes the CHANGELOG section.
 #
 # Least privilege, three jobs:
 #   gates   - read-only: the full CI workflow (tests incl. Postgres + both sandboxes, Docker, MCPB).
@@ -31,6 +36,10 @@ on:
     inputs:
       republish:
         description: 'Recovery only: re-run gates and publish the CURRENT version to npm (no bump, no tag)'
+        type: boolean
+        default: false
+      force:
+        description: 'Release the commits since the last tag even if none would on its own (e.g. a dev-tooling bump that changes the build output)'
         type: boolean
         default: false
 
@@ -69,6 +78,8 @@ jobs:
       - name: Compute version, stamp files, write CHANGELOG section
         id: cut
         if: ${{ !inputs.republish }}
+        env:
+          RELEASE_FORCE: ${{ inputs.force && '1' || '' }}
         run: node scripts/release.mjs
       # Build AFTER stamping so dist/ carries the released version strings.
       - run: pnpm build
