@@ -4,9 +4,12 @@ version: 2
 # not configured here: Settings > Advanced Security > Dependabot security updates. They ignore
 # `cooldown` and `open-pull-requests-limit`, so a fix for an alert is proposed right away.
 #
-# Commit subjects must be conventional (CI checks them, and the release workflow turns them into
-# the version bump and the CHANGELOG): a runtime dependency bump is a `fix(deps)` that users get
-# in the next release; dev tooling, actions and base images are `build`/`ci`.
+# Every merged PR is a release: release.yml runs on each push to main and scripts/release.mjs
+# cuts at least a patch for any commit, so a `build`/`ci` bump also publishes a new npm version
+# (with identical package contents). Groups keep that to about one PR, and one release, per
+# ecosystem per week. Commit subjects must be conventional (CI checks them, and they become the
+# bump and the CHANGELOG): runtime dependency bumps are `fix(deps)` so they read as fixes in
+# the CHANGELOG; dev tooling, site/, actions and base images are `build`/`ci`.
 #
 # `cooldown` waits a few days before proposing a freshly published version, so a compromised
 # release that npm pulls within hours never reaches a PR.
@@ -44,10 +47,16 @@ updates:
     schedule: { interval: weekly }
     cooldown: { default-days: 3 }
     commit-message: { prefix: ci, include: scope }
+    groups:
+      actions:
+        patterns: ['*']
   - package-ecosystem: docker
     directory: /deploy
     schedule: { interval: weekly }
     commit-message: { prefix: build, include: scope }
+    groups:
+      docker:
+        patterns: ['*']
     ignore:
       # The image runs an LTS line; move majors deliberately (isolated-vm prebuilds and
       # engines must cover the new major first). Digest and patch bumps still come through.

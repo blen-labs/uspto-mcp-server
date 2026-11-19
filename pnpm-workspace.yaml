@@ -18,4 +18,4 @@ overrides:
 #     ignoreGhsas:
 #       - GHSA-xxxx-xxxx-xxxx   # why it cannot reach users; date added
 # each with a case in test/audit-exceptions.spec.ts. The scheduled security workflow fails once
-# an entry is withdrawn or gets a fix (scripts/check-audit-exceptions.mjs); then remove it.
+# an entry is withdrawn or gets a fix (scripts/security-audit.mjs); then remove it.
