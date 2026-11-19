@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { failingAdvisories, ignoredGhsas, staleExceptions, stripAuditConfig } from '../scripts/security-audit.mjs';
+import { failingAdvisories, ignoredGhsas, isServiceError, staleExceptions, stripAuditConfig } from '../scripts/security-audit.mjs';
 
 // `auditConfig.ignoreGhsas` in pnpm-workspace.yaml skips an advisory on every dependency path:
 // pnpm cannot limit it to dev tooling. Each root entry needs a row here naming the package it
@@ -91,6 +91,27 @@ describe('security-audit', () => {
       },
     };
     expect(failingAdvisories(audit)).toEqual(['GHSA-2222-2222-2222 (moderate) in b: real']);
+  });
+
+  it('treats only registry and network errors as an outage', () => {
+    expect(isServiceError({ code: 'ECONNREFUSED' })).toBe(true);
+    expect(isServiceError({ code: 'ETIMEDOUT' })).toBe(true);
+    expect(isServiceError({ code: 'ERR_PNPM_AUDIT_BAD_RESPONSE' })).toBe(true);
+    expect(isServiceError({ code: 'ERR_PNPM_AUDIT_NO_LOCKFILE' })).toBe(false);
+    expect(isServiceError(undefined)).toBe(false);
+  });
+
+  it('exits 1 for a broken checkout, and findings outrank an outage elsewhere', () => {
+    const script = join(process.cwd(), 'scripts/security-audit.mjs');
+    // No lockfile: a person has to act, so 1 (not 2, which would retry and open no issue).
+    withWorkspace('overrides: {}\n', dir => {
+      const env = { ...process.env, npm_config_registry: 'http://127.0.0.1:9/', npm_config_fetch_retries: '0' };
+      expect(spawnSync('node', [script, dir], { encoding: 'utf8', env }).status).toBe(1);
+      // The repository root against an unreachable registry is an outage on its own (2) ...
+      expect(spawnSync('node', [script, '.'], { encoding: 'utf8', env }).status).toBe(2);
+      // ... but together with the broken checkout the result stays 1.
+      expect(spawnSync('node', [script, '.', dir], { encoding: 'utf8', env }).status).toBe(1);
+    });
   });
 
   it('keeps an exception whose advisory is still reported without a fix', () => {

@@ -53,6 +53,7 @@ updates:
   - package-ecosystem: docker
     directory: /deploy
     schedule: { interval: weekly }
+    cooldown: { default-days: 3 }
     commit-message: { prefix: build, include: scope }
     groups:
       docker:

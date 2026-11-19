@@ -15,8 +15,10 @@
 //      or now has a patched release.
 // `pnpm audit` reads only the lockfile: nothing is installed and no package scripts run.
 //
-// Exit codes: 0 clean; 1 findings or stale exceptions (a person has to act); 2 the audit itself
-// could not run (registry or network trouble; the workflow retries and opens no issue).
+// Exit codes: 0 clean; 1 findings, stale exceptions or a broken checkout (missing lockfile, bad
+// workspace file: a person has to act); 2 only when the audit service could not be reached
+// (registry or network error codes; the workflow retries and opens no issue). Findings in one
+// root outrank an outage in another, so they still reach the tracking issue.
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -25,7 +27,15 @@ import { join, resolve } from 'node:path';
 const FAILING_SEVERITIES = new Set(['moderate', 'high', 'critical']);
 const COPIED_FILES = ['package.json', 'pnpm-lock.yaml', '.pnpmfile.cjs', '.npmrc'];
 
+// pnpm's JSON `error.code` values that mean the registry or network failed, not this repository.
+const SERVICE_ERROR = /^(ECONN|ETIMEDOUT|ESOCKETTIMEDOUT|ENOTFOUND|EAI_AGAIN|EHOSTUNREACH|ENETUNREACH|EPIPE|UND_ERR|ERR_PNPM_AUDIT_BAD_RESPONSE|ERR_PNPM_FETCH|ERR_PNPM_META_FETCH)/;
+
 class AuditUnavailable extends Error {}
+
+/** Whether a `pnpm audit --json` error is the audit service's fault rather than the checkout's. */
+export function isServiceError(error) {
+  return typeof error?.code === 'string' && SERVICE_ERROR.test(error.code);
+}
 
 /** The workspace text without the top-level `auditConfig` key, in any YAML style. */
 export function stripAuditConfig(yamlText) {
@@ -67,7 +77,7 @@ export function staleExceptions(ghsas, audit) {
 /** The advisories pnpm mutes in `dir`, as pnpm itself reads them. */
 export function ignoredGhsas(dir) {
   const r = spawnSync('pnpm', ['config', 'get', 'auditConfig', '--json'], { cwd: dir, encoding: 'utf8' });
-  if (r.status !== 0) throw new AuditUnavailable(`pnpm config failed in ${dir}: ${r.stderr.trim().slice(0, 500)}`);
+  if (r.status !== 0) throw new Error(`pnpm config failed in ${dir}: ${r.stderr.trim().slice(0, 500)}`);
   const text = r.stdout.trim();
   if (!text || text === 'undefined') return [];
   const ghsas = JSON.parse(text).ignoreGhsas ?? [];
@@ -82,10 +92,11 @@ function audit(dir) {
   try {
     report = JSON.parse(r.stdout);
   } catch {
-    throw new AuditUnavailable(`pnpm audit gave no report in ${dir}: ${(r.stderr || r.stdout || '').trim().slice(0, 500)}`);
+    throw new Error(`pnpm audit gave no report in ${dir}: ${(r.stderr || r.stdout || '').trim().slice(0, 500)}`);
   }
   if (report.error || !report.metadata) {
-    throw new AuditUnavailable(`pnpm audit failed in ${dir}: ${JSON.stringify(report.error ?? report).slice(0, 500)}`);
+    const message = `pnpm audit failed in ${dir}: ${JSON.stringify(report.error ?? report).slice(0, 500)}`;
+    throw isServiceError(report.error) ? new AuditUnavailable(message) : new Error(message);
   }
   return report;
 }
@@ -111,17 +122,19 @@ function checkRoot(dir) {
 
 if (resolve(process.argv[1] ?? '') === import.meta.filename) {
   const dirs = process.argv.length > 2 ? process.argv.slice(2) : ['.', 'site'];
-  let code = 0;
+  let actionable = false;
+  let unavailable = false;
   for (const d of dirs) {
     try {
       const { ghsas, problems } = checkRoot(resolve(d));
       for (const p of problems) console.error(`${d}: ${p}`);
-      if (problems.length) code = Math.max(code, 1);
+      if (problems.length) actionable = true;
       else console.log(`${d}: no advisories${ghsas.length ? `; exceptions ${ghsas.join(', ')} still unpatched` : ''}`);
     } catch (err) {
       console.error(`${d}: ${err instanceof Error ? err.message : err}`);
-      code = err instanceof AuditUnavailable ? Math.max(code, 2) : 1;
+      if (err instanceof AuditUnavailable) unavailable = true;
+      else actionable = true;
     }
   }
-  process.exit(code);
+  process.exit(actionable ? 1 : unavailable ? 2 : 0);
 }
