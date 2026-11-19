@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { failingAdvisories, ignoredGhsas, isServiceError, staleExceptions, stripAuditConfig } from '../scripts/security-audit.mjs';
+import { AuditUnavailable, checkRoot, failingAdvisories, ignoredGhsas, isServiceError, staleExceptions, stripAuditConfig } from '../scripts/security-audit.mjs';
 
 // `auditConfig.ignoreGhsas` in pnpm-workspace.yaml skips an advisory on every dependency path:
 // pnpm cannot limit it to dev tooling. Each root entry needs a row here naming the package it
@@ -111,6 +111,23 @@ describe('security-audit', () => {
       expect(spawnSync('node', [script, '.'], { encoding: 'utf8', env }).status).toBe(2);
       // ... but together with the broken checkout the result stays 1.
       expect(spawnSync('node', [script, '.', dir], { encoding: 'utf8', env }).status).toBe(1);
+    });
+  });
+
+  it('keeps findings from the first audit when the exception check fails', () => {
+    withWorkspace('auditConfig:\n  ignoreGhsas:\n    - GHSA-aaaa-bbbb-cccc\n', dir => {
+      let calls = 0;
+      const runAudit = () => {
+        calls += 1;
+        if (calls === 1) {
+          return { advisories: { '1': { github_advisory_id: 'GHSA-2222-2222-2222', severity: 'high', module_name: 'b', title: 'real' } } };
+        }
+        throw new AuditUnavailable('registry timed out');
+      };
+      const result = checkRoot(dir, { runAudit });
+      expect(calls).toBe(2);
+      expect(result.problems).toEqual(['GHSA-2222-2222-2222 (high) in b: real']);
+      expect(result.error).toBeInstanceOf(AuditUnavailable);
     });
   });
 

@@ -30,7 +30,7 @@ const COPIED_FILES = ['package.json', 'pnpm-lock.yaml', '.pnpmfile.cjs', '.npmrc
 // pnpm's JSON `error.code` values that mean the registry or network failed, not this repository.
 const SERVICE_ERROR = /^(ECONN|ETIMEDOUT|ESOCKETTIMEDOUT|ENOTFOUND|EAI_AGAIN|EHOSTUNREACH|ENETUNREACH|EPIPE|UND_ERR|ERR_PNPM_AUDIT_BAD_RESPONSE|ERR_PNPM_FETCH|ERR_PNPM_META_FETCH)/;
 
-class AuditUnavailable extends Error {}
+export class AuditUnavailable extends Error {}
 
 /** Whether a `pnpm audit --json` error is the audit service's fault rather than the checkout's. */
 export function isServiceError(error) {
@@ -101,22 +101,32 @@ function audit(dir) {
   return report;
 }
 
-function checkRoot(dir) {
-  const problems = failingAdvisories(audit(dir));
-  const ghsas = ignoredGhsas(dir);
-  if (ghsas.length === 0) return { ghsas, problems };
-  const tmp = mkdtempSync(join(tmpdir(), 'security-audit-'));
+/**
+ * Audits one pnpm root. Never throws: whatever was found before a later step failed is still
+ * returned in `problems`, next to the `error` that stopped it. `runAudit` is injectable for tests.
+ */
+export function checkRoot(dir, { runAudit = audit } = {}) {
+  const problems = [];
+  let ghsas = [];
   try {
-    for (const f of COPIED_FILES) {
-      if (existsSync(join(dir, f))) copyFileSync(join(dir, f), join(tmp, f));
+    problems.push(...failingAdvisories(runAudit(dir)));
+    ghsas = ignoredGhsas(dir);
+    if (ghsas.length === 0) return { ghsas, problems };
+    const tmp = mkdtempSync(join(tmpdir(), 'security-audit-'));
+    try {
+      for (const f of COPIED_FILES) {
+        if (existsSync(join(dir, f))) copyFileSync(join(dir, f), join(tmp, f));
+      }
+      writeFileSync(join(tmp, 'pnpm-workspace.yaml'), stripAuditConfig(readFileSync(join(dir, 'pnpm-workspace.yaml'), 'utf8')));
+      const left = ignoredGhsas(tmp);
+      if (left.length) throw new Error(`could not remove exceptions for the check (pnpm still mutes ${left.join(', ')})`);
+      problems.push(...staleExceptions(ghsas, runAudit(tmp)));
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
     }
-    writeFileSync(join(tmp, 'pnpm-workspace.yaml'), stripAuditConfig(readFileSync(join(dir, 'pnpm-workspace.yaml'), 'utf8')));
-    const left = ignoredGhsas(tmp);
-    if (left.length) throw new Error(`${dir}: could not remove exceptions for the check (pnpm still mutes ${left.join(', ')})`);
-    problems.push(...staleExceptions(ghsas, audit(tmp)));
     return { ghsas, problems };
-  } finally {
-    rmSync(tmp, { recursive: true, force: true });
+  } catch (error) {
+    return { ghsas, problems, error };
   }
 }
 
@@ -125,15 +135,15 @@ if (resolve(process.argv[1] ?? '') === import.meta.filename) {
   let actionable = false;
   let unavailable = false;
   for (const d of dirs) {
-    try {
-      const { ghsas, problems } = checkRoot(resolve(d));
-      for (const p of problems) console.error(`${d}: ${p}`);
-      if (problems.length) actionable = true;
-      else console.log(`${d}: no advisories${ghsas.length ? `; exceptions ${ghsas.join(', ')} still unpatched` : ''}`);
-    } catch (err) {
-      console.error(`${d}: ${err instanceof Error ? err.message : err}`);
-      if (err instanceof AuditUnavailable) unavailable = true;
+    const { ghsas, problems, error } = checkRoot(resolve(d));
+    for (const p of problems) console.error(`${d}: ${p}`);
+    if (problems.length) actionable = true;
+    if (error) {
+      console.error(`${d}: ${error instanceof Error ? error.message : error}`);
+      if (error instanceof AuditUnavailable) unavailable = true;
       else actionable = true;
+    } else if (!problems.length) {
+      console.log(`${d}: no advisories${ghsas.length ? `; exceptions ${ghsas.join(', ')} still unpatched` : ''}`);
     }
   }
   process.exit(actionable ? 1 : unavailable ? 2 : 0);
