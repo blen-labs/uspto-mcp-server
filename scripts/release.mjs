@@ -9,8 +9,10 @@
 // step outputs for the workflow to commit/tag/publish. RELEASE_FORCE=1 (the
 // workflow's `force` dispatch input) releases a range that would be skipped.
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, appendFileSync } from 'node:fs';
-import { changedManifestFields, releaseReason, computeBump, bumpVersion, renderChangelogSection, insertChangelogSection, updateVersionMarkers } from './release-lib.mjs';
+import { readFileSync, writeFileSync, appendFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { changedManifestFields, changedPackages, productionPackages, releaseReason, computeBump, bumpVersion, renderChangelogSection, insertChangelogSection, updateVersionMarkers } from './release-lib.mjs';
 
 const MARKER_FILES = ['src/server/mcpServer.ts', 'src/sdk/bindings.ts'];
 
@@ -21,6 +23,38 @@ function git(...args) {
 function setOutput(key, value) {
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${value}\n`);
   console.log(`release: ${key}=${value}`);
+}
+
+/** The files that decide the MCPB bundle's production install (scripts/mcpb-prepare.mjs). */
+const INSTALL_FILES = ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.pnpmfile.cjs'];
+const BIG = 64 * 1024 * 1024;
+
+/**
+ * The production packages the lockfile at `rev` installs, as pnpm reads it (only the install
+ * files, no node_modules), or null when `rev` has no lockfile.
+ */
+function productionTreeAt(rev) {
+  const dir = mkdtempSync(join(tmpdir(), 'release-tree-'));
+  try {
+    let lockfile = false;
+    for (const file of INSTALL_FILES) {
+      let text;
+      try {
+        text = execFileSync('git', ['show', `${rev}:${file}`], { encoding: 'utf8', maxBuffer: BIG, stdio: ['ignore', 'pipe', 'ignore'] });
+      } catch {
+        continue; // not in this revision
+      }
+      writeFileSync(join(dir, file), text);
+      if (file === 'pnpm-lock.yaml') lockfile = true;
+    }
+    if (!lockfile) return null;
+    const out = execFileSync('pnpm', ['ls', '--prod', '--depth', 'Infinity', '--json', '--lockfile-only'], {
+      cwd: dir, encoding: 'utf8', maxBuffer: BIG, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return productionPackages(JSON.parse(out));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 /** Latest tag, or undefined in a repository that has never been released. */
@@ -83,12 +117,24 @@ try {
   // Fail safe: if the comparison cannot be made, assume the manifest changed.
   manifestFields = [`(could not compare with ${lastTag}: ${err instanceof Error ? err.message.split('\n')[0] : err})`];
 }
-const reason = releaseReason(commits, { manifestFields });
+// The lockfile and pnpm-workspace.yaml `overrides:` change with every dev-tooling bump, but they
+// also decide the bundle's production packages: compare that tree, not the files.
+let productionChanges;
+try {
+  const before = productionTreeAt(lastTag);
+  const after = productionTreeAt('HEAD');
+  productionChanges = before === null && after === null ? [] : changedPackages(before ?? [], after ?? []);
+} catch (err) {
+  // Fail safe: if the comparison cannot be made, assume the tree changed.
+  productionChanges = [`(could not compare with ${lastTag}: ${err instanceof Error ? err.message.split('\n')[0] : err})`];
+}
+const reason = releaseReason(commits, { manifestFields, productionChanges });
 const force = process.env.RELEASE_FORCE === '1' || process.env.RELEASE_FORCE === 'true';
 if (!reason && !force) {
   console.log(
     `release: none of the ${commits.length} commit(s) since ${lastTag} can change the published package ` +
-      '(build/chore/ci/docs/style/test only, no shipped path or package.json field) - nothing to release; ' +
+      '(build/chore/ci/docs/style/test only; no shipped path, package.json field or production dependency) - ' +
+      'nothing to release; ' +
       'they ship with the next release, or run the release workflow with `force` to release them now',
   );
   setOutput('released', 'false');

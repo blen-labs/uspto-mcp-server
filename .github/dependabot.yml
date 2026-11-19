@@ -10,7 +10,8 @@ version: 2
 # images (`build(deps)`) and actions (`ci(deps)`) cannot change the npm package, so
 # scripts/release.mjs releases nothing for them; they ship with the next release (CONTRIBUTING,
 # "Releasing"). A grouped PR that includes any runtime dependency takes `fix`. A `build` commit
-# that changes package.json `dependencies` releases anyway. Groups keep PR volume to about one per
+# still releases when it changes package.json `dependencies` or the lockfile's production tree,
+# which the MCPB bundle installs. Groups keep PR volume to about one per
 # ecosystem per week.
 #
 # `cooldown` waits a few days before proposing a freshly published version, so a compromised

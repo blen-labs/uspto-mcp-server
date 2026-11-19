@@ -26,9 +26,10 @@ export const NO_RELEASE_TYPES = Object.freeze(['build', 'chore', 'ci', 'docs', '
  * as is, LICENSE and NOTICE are the package's terms, and .pnpmfile.cjs and mcpb-prepare.mjs
  * shape the MCPB bundle's production install and manifest. Directories end in '/'.
  * Deliberately absent: README.md, SECURITY.md and CHANGELOG.md (documentation, refreshed by
- * the next release), pnpm-lock.yaml and pnpm-workspace.yaml (dev tooling churn; the npm package
- * ships neither, and runtime dependency changes arrive as `fix(deps)`), deploy/ (the Docker image
- * is built from the repository, not by the release), site/, docs/, test/ and .github/.
+ * the next release); pnpm-lock.yaml and pnpm-workspace.yaml, which change with every dev-tooling
+ * bump: they decide the MCPB bundle's production install, so release.mjs compares that tree
+ * itself (changedPackages) instead of releasing on any edit; deploy/ (the Docker image is built
+ * from the repository, not by the release), site/, docs/, test/ and .github/.
  */
 export const SHIPPED_PATHS = Object.freeze([
   'src/', 'web/', 'legal/', 'schema/',
@@ -39,8 +40,12 @@ export const SHIPPED_PATHS = Object.freeze([
 
 /** package.json fields that never reach an install of the published package. */
 const UNSHIPPED_MANIFEST_FIELDS = new Set(['version', 'devDependencies', 'packageManager']);
-/** npm runs these scripts of a dependency on install; every other script is the repository's own. */
-const INSTALL_SCRIPTS = new Set(['preinstall', 'install', 'postinstall']);
+/**
+ * Scripts that only serve development. Every other script counts as shipped: npm runs the install
+ * hooks for users, and build, build:web, prepack and mcpb:* decide what dist/ and the bundle hold
+ * (`npm pack` runs prepack in the release job). A new script counts until it is listed here.
+ */
+export const DEV_ONLY_SCRIPTS = Object.freeze(['dev', 'dev:web', 'test', 'test:watch', 'test:live', 'lint', 'typecheck']);
 
 const isBreaking = ({ subject, body = '' }) => BANG_SUBJECT.test(subject) || BREAKING_FOOTER.test(body);
 
@@ -50,9 +55,9 @@ export function isShippedPath(path) {
 }
 
 /**
- * Top-level package.json fields that differ in a way an install of the package can see:
- * everything except the version (the release stamps it), devDependencies, packageManager and
- * scripts other than the install hooks. Fail-safe: any other field counts, known or not.
+ * Top-level package.json fields that differ in a way the published package can show: everything
+ * except the version (the release stamps it), devDependencies, packageManager and the
+ * DEV_ONLY_SCRIPTS. Fail-safe: any other field or script counts, known or not.
  * @param {Record<string, unknown>} before @param {Record<string, unknown>} after
  */
 export function changedManifestFields(before, after) {
@@ -61,8 +66,8 @@ export function changedManifestFields(before, after) {
     for (const [key, value] of Object.entries(manifest)) {
       if (UNSHIPPED_MANIFEST_FIELDS.has(key)) continue;
       if (key === 'scripts' && value && typeof value === 'object') {
-        const hooks = Object.entries(value).filter(([name]) => INSTALL_SCRIPTS.has(name));
-        if (hooks.length) out[key] = Object.fromEntries(hooks);
+        const shipped = Object.entries(value).filter(([name]) => !DEV_ONLY_SCRIPTS.includes(name));
+        if (shipped.length) out[key] = Object.fromEntries(shipped);
         continue;
       }
       out[key] = value;
@@ -77,15 +82,45 @@ export function changedManifestFields(before, after) {
 }
 
 /**
+ * Every `name@version` in a `pnpm ls --prod --depth Infinity --json` tree. pnpm prints a package's
+ * dependencies once and marks later occurrences deduped, so every node is visited.
+ * @param {Array<{dependencies?: object, optionalDependencies?: object}>} tree
+ */
+export function productionPackages(tree) {
+  const found = new Set();
+  const walk = (deps) => {
+    for (const [name, node] of Object.entries(deps ?? {})) {
+      found.add(`${name}@${node.version}`);
+      walk(node.dependencies);
+      walk(node.optionalDependencies);
+    }
+  };
+  for (const importer of tree) {
+    walk(importer.dependencies);
+    walk(importer.optionalDependencies);
+  }
+  return [...found].sort();
+}
+
+/** `-name@old` / `+name@new` for packages that left or joined a production tree. */
+export function changedPackages(before, after) {
+  const a = new Set(before);
+  const b = new Set(after);
+  return [...before.filter(p => !b.has(p)).map(p => `-${p}`), ...after.filter(p => !a.has(p)).map(p => `+${p}`)];
+}
+
+/**
  * Why these commits need a release, or null when none of them can change what users install.
  * A commit releases when it is breaking, when its type is not in NO_RELEASE_TYPES, or when it
  * touches a SHIPPED_PATHS entry; the range also releases when package.json changed in a shipped
  * field (changedManifestFields), whatever the commit types — e.g. a runtime dependency bumped
- * under a `build(deps)` subject.
+ * under a `build(deps)` subject — or when the lockfile's production tree, which the MCPB bundle
+ * installs, gained or lost a package (changedPackages: a transitive fix in the lockfile or an
+ * `overrides:` entry).
  * @param {{subject: string, body?: string, files?: string[]}[]} commits
- * @param {{manifestFields?: string[]}} [options]
+ * @param {{manifestFields?: string[], productionChanges?: string[]}} [options]
  */
-export function releaseReason(commits, { manifestFields = [] } = {}) {
+export function releaseReason(commits, { manifestFields = [], productionChanges = [] } = {}) {
   for (const commit of commits) {
     if (isBreaking(commit)) return `breaking change: ${commit.subject}`;
     const type = commit.subject.match(TYPE)?.[1];
@@ -94,6 +129,11 @@ export function releaseReason(commits, { manifestFields = [] } = {}) {
     if (shipped) return `${shipped} changed by: ${commit.subject}`;
   }
   if (manifestFields.length) return `package.json changed: ${manifestFields.join(', ')}`;
+  if (productionChanges.length) {
+    const shown = productionChanges.slice(0, 6).join(', ');
+    const more = productionChanges.length > 6 ? `, and ${productionChanges.length - 6} more` : '';
+    return `production dependencies changed: ${shown}${more}`;
+  }
   return null;
 }
 

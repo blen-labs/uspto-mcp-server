@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   changedManifestFields,
+  changedPackages,
+  productionPackages,
   isShippedPath,
   releaseReason,
   computeBump,
@@ -78,6 +82,34 @@ describe('releaseReason', () => {
     expect(releaseReason(commits)).toBeNull();
     expect(releaseReason(commits, { manifestFields: ['dependencies'] })).toBe('package.json changed: dependencies');
   });
+
+  // The MCPB bundle installs the lockfile's production tree; a transitive fix or an `overrides:`
+  // entry can change it without touching package.json.
+  it('releases when the production tree changed, whatever the types', () => {
+    const commits = [c('build(deps): pin a patched transitive dependency', '', ['pnpm-lock.yaml', 'pnpm-workspace.yaml'])];
+    expect(releaseReason(commits, { productionChanges: [] })).toBeNull();
+    expect(releaseReason(commits, { productionChanges: ['-ms@2.1.3', '+ms@2.1.2'] })).toBe('production dependencies changed: -ms@2.1.3, +ms@2.1.2');
+    const many = Array.from({ length: 8 }, (_, i) => `+p${i}@1.0.0`);
+    expect(releaseReason(commits, { productionChanges: many })).toMatch(/\+p5@1\.0\.0, and 2 more$/);
+  });
+});
+
+describe('productionPackages / changedPackages', () => {
+  it('collects every name@version, including dependencies pnpm prints once and marks deduped later', () => {
+    const tree = [{
+      dependencies: {
+        express: { version: '5.3.0', dependencies: { debug: { version: '4.4.3' } } },
+        'body-parser': { version: '2.4.0', dependencies: { debug: { version: '4.4.3', dedupedDependenciesCount: 1 } } },
+      },
+      optionalDependencies: { 'isolated-vm': { version: '7.0.2', dependencies: { 'node-gyp-build': { version: '4.8.4' } } } },
+    }];
+    expect(productionPackages(tree)).toEqual(['body-parser@2.4.0', 'debug@4.4.3', 'express@5.3.0', 'isolated-vm@7.0.2', 'node-gyp-build@4.8.4']);
+    expect(productionPackages([{}])).toEqual([]);
+  });
+  it('lists what left and what joined', () => {
+    expect(changedPackages(['a@1.0.0', 'ms@2.1.3'], ['a@1.0.0', 'ms@2.1.2'])).toEqual(['-ms@2.1.3', '+ms@2.1.2']);
+    expect(changedPackages(['a@1.0.0'], ['a@1.0.0'])).toEqual([]);
+  });
 });
 
 describe('isShippedPath', () => {
@@ -113,6 +145,7 @@ describe('changedManifestFields', () => {
       p.packageManager = 'pnpm@10.34.0';
       p.scripts.test = 'vitest run --reporter dot';
       p.scripts.lint = 'eslint .';
+      p.scripts['test:live'] = 'vitest run test/live.spec.ts --bail 1';
     }))).toEqual([]);
   });
 
@@ -124,6 +157,11 @@ describe('changedManifestFields', () => {
     expect(changedManifestFields(base, edit(p => { delete p.optionalDependencies; }))).toEqual(['optionalDependencies']);
     // npm runs a dependency's install hooks, so those scripts ship.
     expect(changedManifestFields(base, edit(p => { p.scripts.postinstall = 'node x.js'; }))).toEqual(['scripts']);
+    // build, build:web and prepack decide dist/ (`npm pack` runs prepack in the release job).
+    expect(changedManifestFields(base, edit(p => { p.scripts.build = 'tsc --removeComments'; }))).toEqual(['scripts']);
+    expect(changedManifestFields(base, edit(p => { p.scripts.prepack = 'pnpm run build'; }))).toEqual(['scripts']);
+    // A script nobody has classified yet counts (fail safe).
+    expect(changedManifestFields(base, edit(p => { p.scripts['bundle:extra'] = 'node x.js'; }))).toEqual(['scripts']);
   });
 });
 
@@ -210,10 +248,13 @@ type NextCommit = {
   pkg?: (pkg: Record<string, any>) => void;
   /** `git mv` these [from, to] paths in the commit. */
   mv?: [string, string];
+  /** rewrites pnpm-lock.yaml (needs `lockfile: true`). */
+  lock?: (text: string) => string;
 };
 
 describe('release.mjs against disposable repositories', () => {
-  const run = async (tagged: boolean, next: string | NextCommit | NextCommit[] = 'feat(sdk): add something', env: Record<string, string> = {}) => {
+  // `lockfile` adds the real install files, so release.mjs compares production trees with pnpm.
+  const run = async (tagged: boolean, next: string | NextCommit | NextCommit[] = 'feat(sdk): add something', env: Record<string, string> = {}, { lockfile = false } = {}) => {
     const { mkdtempSync, mkdirSync, cpSync, writeFileSync, readFileSync, existsSync } = await import('node:fs');
     const { tmpdir } = await import('node:os');
     const { join, resolve, dirname } = await import('node:path');
@@ -222,7 +263,7 @@ describe('release.mjs against disposable repositories', () => {
     // The disposable repository gets the real package.json, so its tag must name that version.
     const declared = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version as string;
     const dir = mkdtempSync(join(tmpdir(), 'uspto-release-'));
-    for (const f of ['package.json', 'CHANGELOG.md']) cpSync(join(root, f), join(dir, f));
+    for (const f of ['package.json', 'CHANGELOG.md', ...(lockfile ? ['pnpm-lock.yaml', 'pnpm-workspace.yaml', '.pnpmfile.cjs'] : [])]) cpSync(join(root, f), join(dir, f));
     mkdirSync(join(dir, 'scripts'));
     for (const f of ['release.mjs', 'release-lib.mjs']) cpSync(join(root, 'scripts', f), join(dir, 'scripts', f));
     for (const f of ['src/server/mcpServer.ts', 'src/sdk/bindings.ts']) { mkdirSync(join(dir, f, '..'), { recursive: true }); cpSync(join(root, f), join(dir, f)); }
@@ -239,6 +280,7 @@ describe('release.mjs against disposable repositories', () => {
           mkdirSync(dirname(join(dir, path)), { recursive: true });
           writeFileSync(join(dir, path), content);
         }
+        if (n.lock) writeFileSync(join(dir, 'pnpm-lock.yaml'), n.lock(readFileSync(join(dir, 'pnpm-lock.yaml'), 'utf8')));
         if (n.pkg) {
           const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
           n.pkg(pkg);
@@ -325,6 +367,44 @@ describe('release.mjs against disposable repositories', () => {
       const { declared, outputs } = await run(true, next);
       expect(outputs, next.subject).toMatchObject({ released: 'true', bump: 'patch', version: patchOf(declared) });
     }
+  });
+
+  it('a script that shapes the build releases; a dev-only one does not', async () => {
+    const build = await run(true, { subject: 'build: strip comments from dist', pkg: p => { p.scripts.build = `${p.scripts.build} # changed`; } });
+    expect(build.outputs).toMatchObject({ released: 'true', bump: 'patch' });
+    expect(build.log).toContain('package.json changed: scripts');
+    const lint = await run(true, { subject: 'chore: lint quietly', pkg: p => { p.scripts.lint = 'eslint . --quiet'; } });
+    expect(lint.outputs).toEqual({ released: 'false' });
+  });
+
+  // Against the real lockfile. Each edit renames one locked version everywhere it appears, which is
+  // what pnpm reads: a dev-only package (vitest), then a transitive production one (ms, via debug).
+  // The versions come from today's lockfile, and an edit that changes nothing fails the test.
+  const bumpPatch = (v: string) => v.replace(/\d+$/, p => String(Number(p) + 1));
+  const relock = (name: string) => (text: string) => {
+    const from = text.match(new RegExp(`\\n  ${name}@(\\d+\\.\\d+\\.\\d+):\\n`))?.[1];
+    expect(from, `${name} in pnpm-lock.yaml`).toBeDefined();
+    const to = bumpPatch(from!);
+    const out = text
+      .replaceAll(`${name}@${from}`, `${name}@${to}`)
+      .replaceAll(`\n      ${name}: ${from}\n`, `\n      ${name}: ${to}\n`)
+      .replace(new RegExp(`(\\n {6}${name}:\\n {8}specifier: [^\\n]*\\n {8}version: )${from!.replaceAll('.', '\\.')}`), `$1${to}`);
+    expect(out).not.toBe(text);
+    return out;
+  };
+  const lockedVersion = (name: string) => readFileSync(resolve(__dirname, '..', 'pnpm-lock.yaml'), 'utf8').match(new RegExp(`\\n  ${name}@(\\d+\\.\\d+\\.\\d+):\\n`))![1]!;
+
+  it('a lockfile change that leaves the production tree alone releases nothing', async () => {
+    const { outputs, untouched } = await run(true, { subject: 'build(deps-dev): bump vitest', lock: relock('vitest') }, {}, { lockfile: true });
+    expect(outputs).toEqual({ released: 'false' });
+    expect(untouched).toBe(true);
+  });
+
+  it('a lockfile change to a production package releases (the MCPB bundle installs it)', async () => {
+    const { declared, outputs, log } = await run(true, { subject: 'build(deps): pin a patched transitive dependency', lock: relock('ms') }, {}, { lockfile: true });
+    expect(outputs).toMatchObject({ released: 'true', bump: 'patch', version: patchOf(declared) });
+    const ms = lockedVersion('ms');
+    expect(log).toContain(`production dependencies changed: -ms@${ms}, +ms@${bumpPatch(ms)}`);
   });
 
   // git log's rename detection would list only the destination (test/), hiding the shipped source.

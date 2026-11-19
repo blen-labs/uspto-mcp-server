@@ -3,9 +3,10 @@ name: release
 # Continuous release: every push to main that can change what users install is released, after
 # the complete CI gates pass on that exact commit. scripts/release.mjs first decides whether the
 # commits since the last tag need a release: a range of only build/chore/ci/docs/style/test
-# commits that touch no shipped path (src/, web/, schema/, ...) and no shipped package.json field
-# reports released=false, and nothing is tagged or published; those commits ship with the next
-# release (or now, via a `force` dispatch). Otherwise it computes the next SemVer (breaking ->
+# commits that touch no shipped path (src/, web/, schema/, ...), no shipped package.json field and
+# no production dependency in the lockfile (the MCPB bundle installs it) reports released=false,
+# and nothing is tagged or published; those commits ship with the next release (or now, via a
+# `force` dispatch). Otherwise it computes the next SemVer (breaking ->
 # major, feat -> minor, anything else -> patch; the first release of a repository with no tags
 # publishes the version package.json declares), stamps package.json and the x-release-version
 # markers, and writes the CHANGELOG section.

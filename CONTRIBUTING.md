@@ -134,16 +134,23 @@ and no batching.
      (bundled into the portal), `schema/`, `tsconfig.json`, `tsconfig.build.json`,
      `LICENSE`, `NOTICE`, `.pnpmfile.cjs` and `scripts/mcpb-prepare.mjs` (the
      Claude Desktop bundle). So does a change to a `package.json` field other than
-     `version`, `devDependencies`, `packageManager` and non-install `scripts` — for
-     example a runtime dependency bumped under a `build(deps)` subject (Dependabot
-     uses `fix(deps)` for those). The lists live in `scripts/release-lib.mjs`
-     (`NO_RELEASE_TYPES`, `SHIPPED_PATHS`, `changedManifestFields`).
+     `version`, `devDependencies` and `packageManager`, including any script except
+     the dev-only ones (`dev`, `dev:web`, `test`, `test:watch`, `test:live`, `lint`,
+     `typecheck`): `build`, `build:web` and `prepack` decide `dist/`. A runtime
+     dependency bumped under a `build(deps)` subject therefore still releases
+     (Dependabot uses `fix(deps)` for those).
+   - **The bundle's production dependencies.** The MCPB bundle installs
+     `pnpm-lock.yaml` with the `overrides:` in `pnpm-workspace.yaml`, so
+     `release.mjs` compares the lockfile's production tree at the last tag with HEAD
+     (`pnpm ls --prod --lockfile-only`, from git, no install). A changed package there
+     releases, e.g. a transitive security fix landed as a lockfile-only or
+     `overrides:`-only commit. Dev-tooling lockfile churn does not. The lists and
+     checks live in `scripts/release-lib.mjs` (`NO_RELEASE_TYPES`, `SHIPPED_PATHS`,
+     `DEV_ONLY_SCRIPTS`, `changedManifestFields`, `productionPackages`).
    - **Not shipped, by decision:** `README.md`, `SECURITY.md` and the docs (the npm
-     page's README refreshes with the next release); `pnpm-lock.yaml` and
-     `pnpm-workspace.yaml` (the npm package ships neither; a lockfile-only runtime
-     fix should be a `fix(deps)` commit); `deploy/` (the Docker image is built from
-     the repository by the deployment, never by `release.yml`); `site/`, `test/`,
-     `.github/`.
+     page's README refreshes with the next release); `deploy/` (the Docker image is
+     built from the repository by the deployment, never by `release.yml`); `site/`,
+     `test/`, `.github/`.
    - A dev-tooling bump can still change the build output (TypeScript, Vite, or a
      library bundled into the portal such as React). To ship one right away, run
      the release workflow from `main` (**Actions → release → Run workflow**) with
