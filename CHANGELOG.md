@@ -19,6 +19,17 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 
 
 
+
+## [0.3.1] - 2026-11-19
+
+### Fixed
+- bump better-auth from 1.7.22 to 1.7.25 (#30) (deps)
+
+### Changed
+- push the release commit and tag atomically (#31) (release)
+- bump the dev-tooling group with 7 updates (#29) (deps-dev)
+- bump the site group in /site with 3 updates (#28) (deps)
+- daily dependency audit, Dependabot for site/, release only when users get a change (security)
 ## [0.3.0] - 2026-11-17
 
 ### Added
@@ -168,7 +179,8 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 - Docker image (Node 24 + Deno), an MCPB bundle (manifest v0.4) that prompts for keys, and
   third-party license notices in every artifact.
 
-[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.10...v0.3.0
 [0.2.10]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.9...v0.2.10
 [0.2.9]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.8...v0.2.9
