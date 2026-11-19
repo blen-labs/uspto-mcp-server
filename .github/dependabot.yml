@@ -1,23 +1,53 @@
 version: 2
+
+# Version updates, weekly. Security updates (PRs for Dependabot alerts) are a repository setting,
+# not configured here: Settings > Advanced Security > Dependabot security updates. They ignore
+# `cooldown` and `open-pull-requests-limit`, so a fix for an alert is proposed right away.
+#
+# Commit subjects must be conventional (CI checks them, and the release workflow turns them into
+# the version bump and the CHANGELOG): a runtime dependency bump is a `fix(deps)` that users get
+# in the next release; dev tooling, actions and base images are `build`/`ci`.
+#
+# `cooldown` waits a few days before proposing a freshly published version, so a compromised
+# release that npm pulls within hours never reaches a PR.
 updates:
   - package-ecosystem: npm
     directory: /
     schedule: { interval: weekly }
     open-pull-requests-limit: 10
+    cooldown: { default-days: 3 }
+    commit-message: { prefix: fix, prefix-development: build, include: scope }
     groups:
       dev-tooling:
         dependency-type: development
+      security:
+        applies-to: security-updates
+        patterns: ['*']
     ignore:
       # Types track the OLDEST supported runtime (engines: ^24.11.0 || ^26.0.0), so code
       # can't use APIs Node 24 lacks. Bump the major only when Node 24 support is dropped.
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
+  # The documentation site is its own pnpm root (site/pnpm-lock.yaml); it is built into the
+  # Docker image, never into the npm package.
+  - package-ecosystem: npm
+    directory: /site
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    cooldown: { default-days: 3 }
+    commit-message: { prefix: build, include: scope }
+    groups:
+      site:
+        patterns: ['*']
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
+    cooldown: { default-days: 3 }
+    commit-message: { prefix: ci, include: scope }
   - package-ecosystem: docker
     directory: /deploy
     schedule: { interval: weekly }
+    commit-message: { prefix: build, include: scope }
     ignore:
       # The image runs an LTS line; move majors deliberately (isolated-vm prebuilds and
       # engines must cover the new major first). Digest and patch bumps still come through.

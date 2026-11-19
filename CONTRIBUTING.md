@@ -155,12 +155,17 @@ a trusted publisher (allowed to `npm publish`), so no npm token or secret exists
 anywhere and nothing but this workflow on `main` can publish; the job's
 `id-token: write` permission is what authenticates, and provenance is attached
 (`--provenance`). Workflow actions are pinned to commit SHAs; Dependabot
-(`.github/dependabot.yml`) proposes updates for npm packages, actions and the
-Docker base images. Patched versions of vulnerable transitive dev dependencies are
+(`.github/dependabot.yml`) proposes weekly updates for npm packages (server and
+`site/`), actions and the Docker base images, after a 3-day cooldown, and security
+updates for Dependabot alerts right away. The `security` workflow audits both
+lockfiles daily and opens a tracking issue when an advisory appears between pushes.
+Patched versions of vulnerable transitive dev dependencies are
 pinned with `overrides:` in `pnpm-workspace.yaml`; remove an entry once its parent
 ships the fix. An advisory with no patched release is listed under
-`auditConfig.ignoreGhsas` there (and in `site/pnpm-workspace.yaml`), for dev tooling only:
-`test/audit-exceptions.spec.ts` fails if such a package becomes a production dependency.
+`auditConfig.ignoreGhsas` there (and in `site/pnpm-workspace.yaml`), for dev tooling only,
+with a row in `test/audit-exceptions.spec.ts`, which fails if such a package becomes a
+production dependency. The daily workflow fails once an exception's advisory is withdrawn
+or gets a fix (`scripts/check-audit-exceptions.mjs`); then remove it.
 The `files` field in `package.json` ships only `dist/`, `schema/`,
 `README.md`, `LICENSE`, `NOTICE`, `CHANGELOG.md`, and `SECURITY.md`.
 
