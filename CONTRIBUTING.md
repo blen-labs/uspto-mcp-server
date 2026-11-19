@@ -112,14 +112,42 @@ requests cannot catch a protocol misunderstanding shared by both sides.
 ## Releasing
 
 Releases are **continuous** (`.github/workflows/release.yml`): every push to
-`main` is released — there is no Release PR and no batching.
+`main` that can change what users install is released — there is no Release PR
+and no batching.
 
 1. Land changes on `main` **via pull request** (never a direct push) using
    [Conventional Commits](https://www.conventionalcommits.org/)
    (`feat:`, `fix:`, `docs:`, `ci:`, …; add `!` or a `BREAKING CHANGE:` footer
-   for majors; CI enforces the format). The commit types determine the next SemVer version:
-   breaking → major, `feat` → minor, **everything else → at least a patch** —
-   every merge produces a tag and a CHANGELOG entry, by policy.
+   for majors; CI enforces the format). The commits since the last tag decide
+   whether there is a release at all, then the next SemVer version:
+   - **No release** when every commit is `build`, `chore`, `ci`, `docs`, `style`
+     or `test`, none of them touches a shipped path, and `package.json` changed in
+     no shipped field. The workflow reports `released=false` and nothing is
+     tagged or published; those commits ship with the next release and appear in
+     its CHANGELOG section. This is what Dependabot's dev-tooling (`build(deps-dev)`),
+     `site/` and Docker base-image (`build(deps)`) and Actions (`ci(deps)`) PRs are.
+   - **Release** for anything else: `feat`, `fix`, `perf`, `revert`, `refactor`
+     (it rewrites shipped code, so it releases even without a behavior change),
+     a breaking change of any type, or a non-conventional subject. Then breaking →
+     major, `feat` → minor, everything else → patch.
+   - **Shipped paths** release whatever the commit type: `src/`, `web/`, `legal/`
+     (bundled into the portal), `schema/`, `tsconfig.json`, `tsconfig.build.json`,
+     `LICENSE`, `NOTICE`, `.pnpmfile.cjs` and `scripts/mcpb-prepare.mjs` (the
+     Claude Desktop bundle). So does a change to a `package.json` field other than
+     `version`, `devDependencies`, `packageManager` and non-install `scripts` — for
+     example a runtime dependency bumped under a `build(deps)` subject (Dependabot
+     uses `fix(deps)` for those). The lists live in `scripts/release-lib.mjs`
+     (`NO_RELEASE_TYPES`, `SHIPPED_PATHS`, `changedManifestFields`).
+   - **Not shipped, by decision:** `README.md`, `SECURITY.md` and the docs (the npm
+     page's README refreshes with the next release); `pnpm-lock.yaml` and
+     `pnpm-workspace.yaml` (the npm package ships neither; a lockfile-only runtime
+     fix should be a `fix(deps)` commit); `deploy/` (the Docker image is built from
+     the repository by the deployment, never by `release.yml`); `site/`, `test/`,
+     `.github/`.
+   - A dev-tooling bump can still change the build output (TypeScript, Vite, or a
+     library bundled into the portal such as React). To ship one right away, run
+     the release workflow from `main` (**Actions → release → Run workflow**) with
+     **force** checked: it releases the pending commits as a patch.
 2. On push, the `gates` job runs the complete CI workflow on that commit (audit,
    typecheck, lint, build, tests on Node 24 and 26 with Postgres and both sandbox
    runners, the npm-package/MCPB smoke test and the Docker smoke test). Then the
@@ -137,8 +165,9 @@ Releases are **continuous** (`.github/workflows/release.yml`): every push to
    variable, both in the `release` environment (deployable from `main` only); the
    job mints a short-lived token just before the push and uses it only there.
    App-token pushes trigger workflows, so the release commit's own run skips
-   on its `chore(release):` subject, and `release.mjs` ignores such commits: no
-   release loop.
+   on its `chore(release):` subject, and `release.mjs` ignores such commits (and
+   the files they touch): no release loop. A run with nothing to release still
+   runs the gates and builds, but stops before tagging and publishing.
 3. The `publish` job — holding only `id-token: write`, in the `npm` environment
    (deployments allowed from `main` only) — downloads that exact tarball and
    publishes it with `npm publish --provenance`. It never checks out the

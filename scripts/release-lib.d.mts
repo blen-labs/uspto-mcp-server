@@ -1,10 +1,16 @@
 export interface ReleaseCommit {
   subject: string;
   body?: string;
+  files?: string[];
 }
 
 export type Bump = 'major' | 'minor' | 'patch';
 
+export declare const NO_RELEASE_TYPES: readonly string[];
+export declare const SHIPPED_PATHS: readonly string[];
+export declare function isShippedPath(path: string): boolean;
+export declare function changedManifestFields(before: Record<string, unknown>, after: Record<string, unknown>): string[];
+export declare function releaseReason(commits: ReleaseCommit[], options?: { manifestFields?: string[] }): string | null;
 export declare function computeBump(commits: ReleaseCommit[]): Bump;
 export declare function bumpVersion(version: string, bump: Bump): string;
 export declare function renderChangelogSection(version: string, date: string, commits: ReleaseCommit[]): string;
