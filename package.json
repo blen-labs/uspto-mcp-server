@@ -74,7 +74,7 @@
   },
   "dependencies": {
     "@better-auth/cimd": "1.7.22",
-    "@better-auth/mcp": "1.7.22",
+    "@better-auth/mcp": "1.7.25",
     "@better-auth/oauth-provider": "1.7.25",
     "@modelcontextprotocol/node": "2.1.2",
     "@modelcontextprotocol/server": "2.4.0",
