@@ -20,6 +20,11 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 
 
 
+
+## [0.3.2] - 2026-11-20
+
+### Fixed
+- bump @better-auth/oauth-provider from 1.7.22 to 1.7.25 (#33) (deps)
 ## [0.3.1] - 2026-11-19
 
 ### Fixed
@@ -179,7 +184,8 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 - Docker image (Node 24 + Deno), an MCPB bundle (manifest v0.4) that prompts for keys, and
   third-party license notices in every artifact.
 
-[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.10...v0.3.0
 [0.2.10]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.9...v0.2.10
