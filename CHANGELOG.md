@@ -5,6 +5,52 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-21
+
+### Added
+- let a server without accounts hide sign-in (kit)
+- let product.mjs override page labels (site)
+- a landing page, a shared portal kit, and WCAG 2.2 AA fixes (web)
+
+### Fixed
+- name the code blocks Expressive Code makes scrollable (site)
+- on a read error drop only the file's headers (docs)
+- send a docs read error without the file's headers (docs)
+- report docs-site read errors instead of a 404 page (docs)
+- keep queueMicrotask in the Deno worker (sandbox)
+- cap the request body in the Node adapter too (http)
+- prerender the policy pages so they read without JavaScript (web)
+- tie only key problems to their key field (portal)
+- accept hosted connectors' Origin on the signed-in MCP endpoint (accounts)
+- list the portal's CSS packages in the third-party notices; make source links optional (web)
+- keep platform health checks working, and require the public origin with auth (http)
+- never read an inherited property for an error code; drop the npm link when not published
+- show why a Google sign-in failed, and let hosted-only servers use the docs site (web)
+- close review findings on the release script, MCP Origin and the portal
+- end the Deno supervisor when the host goes away (sandbox)
+- update better-auth, jose, undici and the portal and site tooling (deps)
+
+### Changed
+- declare the service settings in .railway/railway.ts (railway)
+- restore the repository formatting of the kit files (kit)
+- expect no-store on a docs read error (docs)
+- declare the page-label overrides (none) in product.mjs (site)
+- tolerate EPIPE as well as ECONNRESET after an early 413 (http)
+- strip tags until none are left when reading policy text
+- fail the browser journey in CI instead of skipping it (web)
+- keep six core rules from the Biome setup (lint)
+- serve the docs site through the real /docs handler in browser tests (web)
+- always start the preview servers fresh (web)
+- note why the signed-in MCP endpoint accepts any Origin
+- release when the portal's bundled dependencies change (release)
+- keep the journey's session cookies in a private temporary directory (web)
+- accessibility conformance, the portal kit, and pnpm 12 notes
+- run the browser accessibility suite on every pull request
+- one product config, and accessibility fixes found by axe (site)
+- lint for correctness and security, not just unused variables (lint)
+- move to pnpm 12.21.0
+- keep one blank line around each CHANGELOG section (release)
+
 ## [0.3.2] - 2026-11-20
 
 ### Fixed
@@ -184,7 +230,8 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 - Docker image (Node 24 + Deno), an MCPB bundle (manifest v0.4) that prompts for keys, and
   third-party license notices in every artifact.
 
-[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.2.10...v0.3.0
