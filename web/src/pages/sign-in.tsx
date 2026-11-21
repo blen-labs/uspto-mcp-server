@@ -5,10 +5,15 @@ import { Shell } from '@/components/kit/shell';
 import { authClient } from '@/lib/auth';
 import { useFlow } from '@/lib/flow';
 import { brand } from '@/brand';
+import { errorMessage } from '@/components/kit/error-page';
 
 export function SignIn() {
   const { oauthQuery, next, keep } = useFlow();
-  const [error, setError] = useState<string>();
+  // A failed Google sign-in returns here with ?error=<code>; the pending connection is kept.
+  const [error, setError] = useState<string | undefined>(() => {
+    const code = new URLSearchParams(window.location.search).get('error');
+    return code ? errorMessage(code) : undefined;
+  });
   const [busy, setBusy] = useState(false);
   async function google() {
     if (busy) return;

@@ -9,6 +9,14 @@ export const site = 'https://uspto.mcp.blenlabs.com';
 export const base = '/docs';
 export const repo = 'https://github.com/blen-labs/uspto-mcp-server';
 export const packageName = '@blen/uspto-mcp-server';
+/**
+ * How people can run the server. `npm`: a published package that desktop clients start with npx
+ * (the install buttons and pasted configs on the overview and connect pages). `mcpb`: a Claude
+ * Desktop bundle attached to each GitHub release. A hosted-only server sets both to false; its
+ * pages then describe connecting to the hosted URL only, and scripts/check-links.mjs skips the
+ * install checks.
+ */
+export const distribution = { npm: true, mcpb: true };
 /** The key a client config uses for this server (Cursor, VS Code, mcpServers). */
 export const serverName = 'uspto';
 export const description =

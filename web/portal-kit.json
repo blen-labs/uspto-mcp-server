@@ -5,7 +5,7 @@
     "web/src/assets/blen-logo.png": "ed0b7bcef0910ce09e298e4476f323aaa51e717c666762f97ca03cca21b7f77e",
     "web/src/components/kit/brand.ts": "2690b709476a7d7d1a450d0a7beff717005015e6af366c9e5bbdf3f0b55d494b",
     "web/src/components/kit/copy-field.tsx": "ce1a943e2e11ff62c0c334a2c8bc0f99e8e32076195166e35971abfa70bfaf73",
-    "web/src/components/kit/error-page.tsx": "873c1a74b9a24fd54509b85ccd67f07a499e9799724e89013eb49e20192d5f76",
+    "web/src/components/kit/error-page.tsx": "5ba318b5954a0ea0e395957bbc56f8b0e498aa7c3b475cf295050c86c3ef4edd",
     "web/src/components/kit/field.tsx": "dcf7671c3f8dd5f562cc406f98fc41418dddf81b0d5d8f2d5ac77e908c408032",
     "web/src/components/kit/landing.tsx": "a6397c8b8a1ade88d2f3abb1d5b1c45d4f8b70ded6ca22031fe937863579d838",
     "web/src/components/kit/notice.tsx": "56a47ce4bbb43dcac461410f32d61fc8158e923688f30b5020f11e8f2cb0629f",

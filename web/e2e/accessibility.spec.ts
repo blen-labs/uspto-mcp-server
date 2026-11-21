@@ -102,6 +102,14 @@ test.describe('behaviour', () => {
     await expect(page.locator(':focus')).toContainText('Key saved');
   });
 
+  test('a failed Google sign-in comes back with an announced, fixed message', async ({ page }) => {
+    await open(page, `/sign-in?${OAUTH_QUERY}&error=access_denied`, undefined, /sign in to connect/i);
+    await expect(page.getByRole('alert')).toHaveText('Sign-in was cancelled.');
+    // An unknown code never echoes the URL's text.
+    await open(page, '/sign-in?error=%3Cscript%3E', undefined, /your account/i);
+    await expect(page.getByRole('alert')).toHaveText('Something went wrong. Start again.');
+  });
+
   test('copying a connector URL is announced', async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await open(page, '/', undefined, /patent and trademark data/i);

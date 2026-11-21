@@ -12,10 +12,14 @@ const MESSAGES: Record<string, string> = {
   internal_server_error: 'Something went wrong on our side. Try again later.',
 };
 
+/** A fixed message for an error code from the URL (never the code's own text). */
+export function errorMessage(code: string): string {
+  return MESSAGES[code.toLowerCase()] ?? 'Something went wrong. Start again.';
+}
+
 /** Where Better Auth and the portal send people when sign-in or a connection fails. */
 export function ErrorPage() {
-  const code = new URLSearchParams(window.location.search).get('error') ?? '';
-  const message = MESSAGES[code.toLowerCase()] ?? 'Something went wrong. Start again.';
+  const message = errorMessage(new URLSearchParams(window.location.search).get('error') ?? '');
   return (
     <Shell title="Something went wrong">
       <Notice>{message}</Notice>
