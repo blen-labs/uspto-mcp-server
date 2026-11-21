@@ -121,7 +121,7 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (args.rotateKeys) return rotateKeys();
 
-  const accounts = args.http && process.env.USPTO_AUTH_PROVIDER === 'accounts';
+  const accounts = args.http && process.env.USPTO_AUTH_PROVIDER?.trim() === 'accounts';
   if (accounts && args.insecure) throw new Error('Account authentication cannot be combined with --insecure');
   const env = process.env;
   const shutdownController = new AbortController();

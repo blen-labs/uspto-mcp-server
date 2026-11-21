@@ -401,6 +401,8 @@ describe('Auth enforcement (OIDC, signed tokens from a local issuer)', () => {
     await expect(startHttp(deps, { ...base, auth: { provider: 'generic-oidc', issuer: ISSUER, jwksUrl } })).rejects.toThrow(/AUDIENCE/);
     await expect(startHttp(deps, { ...base, auth: { provider: 'generic-oidc', audience: AUDIENCE, jwksUrl } })).rejects.toThrow(/ISSUER/);
     await expect(startHttp(deps, { ...base, host: '0.0.0.0', insecure: true, auth: { provider: 'none' } })).rejects.toThrow(/USPTO_PUBLIC_ORIGIN/);
+    // Authenticated beyond loopback: allowed hosts alone cannot name the URL OAuth metadata advertises.
+    await expect(startHttp(deps, { ...base, host: '0.0.0.0', allowedHosts: ['mcp.example.com'], auth: { provider: 'generic-oidc', issuer: ISSUER, audience: AUDIENCE, jwksUrl } })).rejects.toThrow(/needs USPTO_PUBLIC_ORIGIN/);
   });
 });
 
@@ -417,7 +419,8 @@ describe('Host validation (DNS rebinding)', () => {
     });
   };
   it('rejects a foreign Host even when Origin matches it, and accepts loopback', async () => {
-    expect(await raw('/health', { host: 'attacker.example' })).toBe(421);
+    // /health answers any Host (platform health checks); everything else needs a trusted one.
+    expect(await raw('/health', { host: 'attacker.example' })).toBe(200);
     const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: { _meta: meta() } });
     expect(await raw('/mcp', { host: 'attacker.example', origin: 'http://attacker.example', 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body)).toBe(421);
     expect(await raw('/health', { host: `127.0.0.1:${new URL(base).port}` })).toBe(200);
