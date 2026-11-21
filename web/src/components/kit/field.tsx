@@ -24,7 +24,8 @@ export function Field({
       <Label htmlFor={id}>{label}</Label>
       <Input id={id} name={id} aria-describedby={describedBy} aria-invalid={error ? true : undefined} {...props} />
       {error && (
-        <p id={`${id}-error`} className="text-destructive text-xs font-medium">
+        // role=alert: the error appears after a submit, away from where focus is, so announce it.
+        <p id={`${id}-error`} role="alert" className="text-destructive text-xs font-medium">
           {error}
         </p>
       )}

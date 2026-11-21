@@ -28,7 +28,7 @@ export function Shell({
         <Card className={wide ? 'w-full max-w-2xl' : 'w-full max-w-md'} aria-busy={busy || undefined}>
           <CardHeader>
             <CardTitle asChild className="text-xl leading-tight wrap-anywhere">
-              <h1 tabIndex={-1} className="outline-none">{title}</h1>
+              <h1>{title}</h1>
             </CardTitle>
             {description && <CardDescription>{description}</CardDescription>}
             {action && <CardAction>{action}</CardAction>}

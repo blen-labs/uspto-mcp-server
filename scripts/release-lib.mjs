@@ -202,9 +202,11 @@ export function insertChangelogSection(changelog, sectionText, version) {
   // The heading and the blank lines under it become exactly: heading, blank, section, blank. A
   // `\s*$` here would swallow those blank lines into the match and keep them, so the run grew by
   // one line per release and the next heading lost its separating blank line.
+  // A function replacer, so `$&`, `$'` or `$$` in the section text stay literal. Line endings
+  // (\r\n too) are matched, not assumed.
   let out = changelog.replace(
-    /^## \[Unreleased\][ \t]*\n(?:[ \t]*\n)*/m,
-    `## [Unreleased]\n\n${sectionText.trim()}\n\n`,
+    /^## \[Unreleased\][ \t]*\r?\n(?:[ \t]*\r?\n)*/m,
+    () => `## [Unreleased]\n\n${sectionText.trim()}\n\n`,
   );
   out = out.replace(
     unreleasedLink[0],

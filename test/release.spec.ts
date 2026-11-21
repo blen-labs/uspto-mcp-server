@@ -234,6 +234,13 @@ describe('insertChangelogSection', () => {
     expect(out).toContain('- x\n\n## [2.0.0]');
     expect(out).not.toMatch(/\n\n\n/);
   });
+
+  it('keeps `$` sequences in the section literal and handles CRLF changelogs', () => {
+    const section = '## [2.0.1] - 2026-08-07\n\n### Fixed\n- costs $& and $$5 and $`\n';
+    expect(insertChangelogSection(changelog, section, '2.0.1')).toContain('- costs $& and $$5 and $`\n');
+    const crlf = insertChangelogSection(changelog.replace(/\n/g, '\r\n'), section, '2.0.1');
+    expect(crlf).toContain('## [2.0.1] - 2026-08-07');
+  });
 });
 
 describe('updateVersionMarkers', () => {

@@ -89,6 +89,7 @@ test.describe('behaviour', () => {
     await field.fill('a'.repeat(32));
     await page.getByRole('button', { name: 'Check and save' }).first().click();
     await expect(field).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.getByRole('alert').filter({ hasText: 'USPTO rejected this key.' })).toBeVisible();
     await expect(field).toHaveAccessibleDescription(/USPTO rejected this key/);
   });
 

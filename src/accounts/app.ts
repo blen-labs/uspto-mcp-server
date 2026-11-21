@@ -20,6 +20,8 @@ import { resolve } from 'node:path';
 
 const CROSS_ORIGIN_PATHS =
   /^\/(?:mcp(?:\/account)?|\.well-known\/(?:oauth-protected-resource|oauth-authorization-server|openid-configuration)(?:\/[\w-]+)*|api\/auth\/(?:oauth2\/(?:register|token|revoke)|\.well-known\/(?:oauth-authorization-server|openid-configuration)))$/;
+/** The MCP endpoints, where Origin is validated (see the CORS middleware). */
+const MCP_PATHS = new Set([PUBLIC_MCP_PATH, ACCOUNT_MCP_PATH]);
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
@@ -54,7 +56,6 @@ function jsonOrForm(body: Buffer): { get(name: string): string | null } {
   }
   return new URLSearchParams(text);
 }
-/** MCP's rule for redirect URIs: HTTPS, or plain HTTP only to this computer. */
 /** The columns of a Better Auth `oauthAccessToken` row that bearer checks read. */
 type AccessTokenRow = {
   userId?: string | null;
@@ -64,7 +65,6 @@ type AccessTokenRow = {
   resources?: string[] | null;
   scopes?: string[] | string | null;
 };
-
 
 /** Client-side routes of the portal (web/src/main.tsx), served as index.html. */
 const PORTAL_ROUTES = ['/', '/sign-in', '/connect', '/consent', '/account', '/privacy-policy', '/terms', '/error'];
@@ -85,6 +85,8 @@ const TOO_MANY_PAGE = `<!doctype html>
 <body><main><h1>Too many requests</h1><p>This address sent too many requests. Wait a minute, then <a href="/">try again</a>.</p></main></body>
 </html>
 `;
+
+/** MCP's rule for redirect URIs: HTTPS, or plain HTTP only to this computer. */
 export function allowedRedirect(value: unknown) {
   if (typeof value !== 'string') return false;
   try {
@@ -171,7 +173,19 @@ export async function createAccountApp(
     // discovery, registration, token and /mcp from other origins. These use bearer tokens or
     // client credentials, never cookies, and the Host check above prevents DNS rebinding.
     if (CROSS_ORIGIN_PATHS.test(req.path)) {
-      res.set(CORS_HEADERS);
+      if (MCP_PATHS.has(req.path)) {
+        // MCP's transport rule: a request whose Origin is not allowed gets 403. Allowed are this
+        // server's origin, loopback, and USPTO_ALLOWED_ORIGINS; CORS echoes only those, so a
+        // browser client from another site fails at the preflight with a clear reason.
+        const origin = req.headers.origin;
+        if (typeof origin === 'string' && !originAllowed(origin, config.origin, config.allowedOrigins ?? [])) {
+          log.warn('account.mcp_origin_rejected');
+          return res.status(403).json({ error: 'origin_not_allowed' });
+        }
+        res.set({ ...CORS_HEADERS, 'Access-Control-Allow-Origin': origin ?? '*', Vary: 'Origin' });
+      } else {
+        res.set(CORS_HEADERS);
+      }
       if (req.method === 'OPTIONS')
         return res
           .status(204)
@@ -258,11 +272,7 @@ export async function createAccountApp(
   // publicDependencies). A bearer token sent here is ignored; signed-in access is ACCOUNT_MCP_PATH.
   app.all(PUBLIC_MCP_PATH, async (req, res) => {
     if (!publicLimiter.allow(ipOf(req) ?? 'unknown')) return tooMany(res);
-    // As in the base transport (MCP's Origin rule): with no token to check, a browser on another
-    // site must not drive this endpoint. Non-browser clients send no Origin and pass.
-    const origin = req.headers.origin;
-    if (typeof origin === 'string' && !originAllowed(origin, config.origin, config.allowedOrigins ?? []))
-      return res.status(403).json({ error: 'origin_not_allowed' });
+    // Origin was checked with the CORS headers above; non-browser clients send no Origin.
     await publicNode(req, res);
   });
   // Failed token checks per address (2 each second, bursts of 120): enough for the expired tokens
@@ -271,11 +281,6 @@ export async function createAccountApp(
   // No body parser: the SDK reads the body (capped at MAX_REQUEST_BODY_BYTES, as in the base
   // transport) only after the token checks below pass.
   app.all(ACCOUNT_MCP_PATH, async (req, res) => {
-    // MCP's Origin rule applies here too: a valid token must not let another site's page in the
-    // user's browser drive this endpoint. Checked before any token work.
-    const origin = req.headers.origin;
-    if (typeof origin === 'string' && !originAllowed(origin, config.origin, config.allowedOrigins ?? []))
-      return res.status(403).json({ error: 'origin_not_allowed' });
     const challenge = (status: number, error: string) =>
       res
         .status(status)

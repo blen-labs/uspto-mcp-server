@@ -660,6 +660,18 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     });
     expect(foreign.status).toBe(403);
     expect(await foreign.json()).toEqual({ error: 'origin_not_allowed' });
+    // A browser client fails at the preflight with a clear status, and CORS never says `*` for
+    // an MCP endpoint; the server's own origin is echoed.
+    const preflight = (origin: string) => fetch(`${config.origin}/mcp/account`, {
+      method: 'OPTIONS', headers: { origin, 'access-control-request-method': 'POST', 'access-control-request-headers': 'authorization,content-type' },
+    });
+    expect((await preflight('https://evil.example')).status).toBe(403);
+    const own = await preflight(config.origin);
+    expect(own.status).toBe(204);
+    expect(own.headers.get('access-control-allow-origin')).toBe(config.origin);
+    // OAuth discovery stays open to every client.
+    const discovery = await fetch(`${config.origin}/.well-known/oauth-protected-resource/mcp/account`, { headers: { origin: 'https://app.example' } });
+    expect(discovery.headers.get('access-control-allow-origin')).toBe('*');
     await (await service.auth.$context).adapter.update({ model: 'user', where: [{ field: 'id', value: alice.id }], update: { emailVerified: false } });
     expect((await mcp(a.access_token)).status).toBe(401);
     await (await service.auth.$context).adapter.update({ model: 'user', where: [{ field: 'id', value: alice.id }], update: { emailVerified: true } });

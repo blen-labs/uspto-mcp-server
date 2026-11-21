@@ -20,8 +20,8 @@ export function Landing({ accountUrl, publicUrl }: { accountUrl: string; publicU
         <div className="mx-auto grid max-w-5xl gap-6 px-4 py-14 sm:py-20">
           <h1
             id="hero-title"
-            tabIndex={-1}
-            className="max-w-3xl text-4xl font-semibold tracking-tight outline-none sm:text-5xl"
+           
+            className="max-w-3xl text-4xl font-semibold tracking-tight sm:text-5xl"
           >
             {brand.tagline}
           </h1>
