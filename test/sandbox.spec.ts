@@ -128,6 +128,7 @@ describe.each([new IsolateRunner(), new DenoRunner()])('$kind runner contract', 
     ['returns values and captures logs', 'console.log("hi", { a: 1 }); return 1 + 2', { ok: true, value: 3 }],
     ['proxies SDK calls', 'return await odp.patents.search({ q: "x" })', { ok: true, value: { binding: 'odp', path: ['patents', 'search'], args: [{ q: 'x' }] } }],
     ['keeps an SDK error\'s name and status', 'try { await odp.fail(); } catch (e) { return [e.name, e.message, e.status]; }', { ok: true, value: ['NotFound', 'nope', 404] }],
+    ['resolves many SDK calls pending at once', 'const r = await Promise.all([1, 2, 3, 4, 5, 6].map(n => odp.patents.search({ n }))); return r.map(x => x.args[0].n)', { ok: true, value: [1, 2, 3, 4, 5, 6] }],
     ['returns null for undefined', 'return undefined', { ok: true, value: null }],
     ['reports a thrown error with its status', 'throw Object.assign(new Error("boom"), { status: 418 })', { ok: false, error: { name: 'Error', message: 'boom', status: 418 } }],
   ] as const)('%s', async ([, code, expected], { skip }) => {
