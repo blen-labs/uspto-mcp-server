@@ -428,13 +428,21 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     expect((await send(browser, '/api/portal/connect', payload, 'https://evil.example')).status).toBe(403);
     expect((await send(browser, '/api/portal/connect', { ...payload, oauth_query: `${oauth_query}&client_id=attacker` })).status).toBe(400);
     expect((await send(browser, '/api/portal/connect', { ...payload, owner: personalOwner(bob.id) })).status).toBe(400);
+    // Not about a typed key: no field, so the page shows a notice instead of a field error.
+    const expired = await send(browser, '/api/portal/connect', { ...payload, oauth_query: `${oauth_query}&client_id=attacker` });
+    expect(await expired.json()).toEqual({ error: 'Connection authorization failed.' });
     const info = await browser(`${config.origin}/api/portal/connect?oauth_query=${encodeURIComponent(oauth_query)}`);
     expect(await info.json()).toMatchObject({ email: alice.email, client: 'Test assistant', keys: { odp: { connected: false }, tsdr: { connected: false } } });
     expect((await send(browser, '/api/portal/connect', { ...payload, apiKey: key, tsdrApiKey: tsdrKey })).status).toBe(200);
     expect(await store.getKey(personalOwner(alice.id), 'odp')).toBe(key);
     expect(await store.getKey(personalOwner(alice.id), 'tsdr')).toBe(tsdrKey);
     validationStatus = 403;
-    expect((await send(browser, '/api/portal/connect', { ...payload, apiKey: 'z'.repeat(32) })).status).toBe(400);
+    const rejectedOdp = await send(browser, '/api/portal/connect', { ...payload, apiKey: 'z'.repeat(32) });
+    expect(rejectedOdp.status).toBe(400);
+    expect((await rejectedOdp.json() as any).field).toBe('apiKey');
+    const rejectedTsdr = await send(browser, '/api/portal/connect', { ...payload, tsdrApiKey: 'z'.repeat(32) });
+    expect(rejectedTsdr.status).toBe(400);
+    expect((await rejectedTsdr.json() as any).field).toBe('tsdrApiKey');
     validationStatus = 200;
     expect(await store.getKey(personalOwner(alice.id), 'odp')).toBe(key);
     const denied = await send(browser, '/api/portal/connect', { oauth_query, decision: 'deny' });
@@ -461,12 +469,20 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     expect(JSON.stringify(account)).not.toContain(key);
     expect(account.keys).toMatchObject({ odp: { connected: true }, tsdr: { connected: false } });
     validationStatus = 403;
-    expect((await send(browser, '/api/portal/keys', { apiKey: 'z'.repeat(32) })).status).toBe(400);
+    const rejected = await send(browser, '/api/portal/keys', { apiKey: 'z'.repeat(32) });
+    expect(rejected.status).toBe(400);
+    expect(await rejected.json()).toMatchObject({ field: 'apiKey' });
+    const rejectedTsdr = await send(browser, '/api/portal/keys', { tsdrApiKey: 'z'.repeat(32) });
+    expect(rejectedTsdr.status).toBe(400);
+    expect(await rejectedTsdr.json()).toMatchObject({ field: 'tsdrApiKey' });
     validationStatus = 200;
+    await pool.query('DELETE FROM request_limits'); // the checks above spent this account's key-check budget
     expect(await store.getKey(personalOwner(alice.id), 'odp')).toBe(key);
     // An empty body or an unknown kind is refused; a ciphertext never opens as the other kind.
     expect((await send(browser, '/api/portal/keys', {})).status).toBe(400);
-    expect((await send(browser, '/api/portal/keys/delete', { kind: 'regs' })).status).toBe(400);
+    const unknownKind = await send(browser, '/api/portal/keys/delete', { kind: 'regs' });
+    expect(unknownKind.status).toBe(400);
+    expect((await unknownKind.json() as any).field).toBeUndefined();
     await pool.query("INSERT INTO credentials(owner,kind,ciphertext) SELECT owner,'tsdr',ciphertext FROM credentials WHERE owner=$1 AND kind='odp'", [personalOwner(alice.id)]);
     await expect(store.getKey(personalOwner(alice.id), 'tsdr')).rejects.toThrow();
     await pool.query("DELETE FROM credentials WHERE owner=$1 AND kind='tsdr'", [personalOwner(alice.id)]);
@@ -586,6 +602,8 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     mock.get(ODP)
       .intercept({ path: '/api/v1/patent/trials/proceedings/IPR0000-00000', method: 'GET', headers: { 'x-api-key': key } })
       .reply(404, { errorDetails: key });
+    // The `${...}` is sandbox source (a template literal that runs inside execute), not a typo.
+    // eslint-disable-next-line no-template-curly-in-string
     const missing = await mcp(a.access_token, 'try { await odp.ptab.proceedings.get("IPR0000-00000"); } catch (e) { return `${e.name}: ${e.message} ${e.status}`; }');
     expect(missing.body).toContain('NotFound');
     expect(missing.body).toContain('404');

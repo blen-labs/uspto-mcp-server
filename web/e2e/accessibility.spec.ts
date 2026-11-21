@@ -93,6 +93,34 @@ test.describe('behaviour', () => {
     await expect(field).toHaveAccessibleDescription(/USPTO rejected this key/);
   });
 
+  test('a failure that is not about the key is a page notice, not a field error', async ({ page }) => {
+    const message = 'Could not remove the key right now. Try again.';
+    await open(page, '/account', { signedIn: true, requestError: message }, /your account/i);
+    await page.getByRole('button', { name: 'Remove key' }).click();
+    await expect(page.getByRole('alert').filter({ hasText: message })).toBeVisible();
+    const field = page.getByLabel('Replace key');
+    await expect(field).not.toHaveAttribute('aria-invalid', 'true');
+    await expect(field).not.toHaveAccessibleDescription(/Could not remove/);
+  });
+
+  test('on the connect page, a key problem is tied to its own field and anything else is a notice', async ({ page }) => {
+    await open(page, `/connect?${OAUTH_QUERY}`, { signedIn: true, saveKeyError: 'TSDR rejected this key.', saveKeyField: 'tsdrApiKey' }, /connect claude/i);
+    const odp = page.locator('input#apiKey');
+    const tsdr = page.locator('input#tsdrApiKey');
+    await tsdr.fill('a'.repeat(32));
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(tsdr).toHaveAttribute('aria-invalid', 'true');
+    await expect(tsdr).toHaveAccessibleDescription(/TSDR rejected this key/);
+    await expect(odp).not.toHaveAttribute('aria-invalid', 'true');
+
+    const expired = 'This connection request expired. Start again from your AI assistant.';
+    await open(page, `/connect?${OAUTH_QUERY}`, { signedIn: true, requestError: expired }, /connect claude/i);
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByRole('alert').filter({ hasText: expired })).toBeVisible();
+    await expect(page.locator('input#apiKey')).not.toHaveAttribute('aria-invalid', 'true');
+    await expect(page.locator('input#tsdrApiKey')).not.toHaveAttribute('aria-invalid', 'true');
+  });
+
   test('a saved key confirmation gets focus and is announced politely', async ({ page }) => {
     await open(page, '/account', { signedIn: true }, /your account/i);
     await page.getByLabel('Replace key').fill('a'.repeat(32));

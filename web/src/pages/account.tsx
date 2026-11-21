@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { KEY_INFO, KeyField } from '@/components/fields';
 import { Notice } from '@/components/kit/notice';
 import { Loading, Shell, SignedInAs, SignOut } from '@/components/kit/shell';
-import { api, type ClaudeLinkStatus, type KeyKind, type Keys } from '@/lib/api';
+import { api, failure, type ClaudeLinkStatus, type Failure, type KeyKind, type Keys } from '@/lib/api';
 import { useLoad } from '@/lib/use-load';
 
 function KeyCard({
@@ -19,7 +19,7 @@ function KeyCard({
 }) {
   const info = KEY_INFO[kind];
   const [apiKey, setApiKey] = useState('');
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<Failure>();
   const [busy, setBusy] = useState(false);
   /** Runs a change; the server's warning, if any, replaces the success notice. */
   async function run(action: () => Promise<{ warning?: string }>, notice: string) {
@@ -31,7 +31,7 @@ function KeyCard({
       setApiKey('');
       onChanged(result.warning ?? notice);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong.');
+      setError(failure(e));
     } finally {
       setBusy(false);
     }
@@ -51,7 +51,8 @@ function KeyCard({
           Used for {info.covers} in your signed-in connections. It is never displayed again.
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="grid gap-4">
+          {error && error.field !== info.field && <Notice>{error.message}</Notice>}
           <form
             className="grid gap-4"
             onSubmit={(e) => {
@@ -65,7 +66,7 @@ function KeyCard({
               required
               value={apiKey}
               onChange={setApiKey}
-              error={error}
+              error={error?.field === info.field ? error.message : undefined}
             />
             <div className="flex flex-wrap gap-3">
               <Button type="submit" aria-disabled={busy}>
