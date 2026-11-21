@@ -2,8 +2,8 @@ import { z } from 'zod';
 import type { Sdk } from '../sdk/bindings.js';
 import { dispatch } from '../sdk/runtime.js';
 import { TEARDOWN, type SandboxRunner, type WithTeardown } from '../sandbox/types.js';
-import { SubjectQuota } from '../util/quotas.js';
-import { ExecutionLimiter } from '../util/executionLimiter.js';
+import { type SubjectQuota } from '../util/quotas.js';
+import { type ExecutionLimiter } from '../util/executionLimiter.js';
 import { runWithSignal } from '../util/executionContext.js';
 import { DEFAULT_LIMITS } from '../sandbox/limits.js';
 

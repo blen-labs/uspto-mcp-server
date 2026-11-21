@@ -1,3 +1,5 @@
+import { request as httpRequest } from 'node:http';
+import type { Server as HttpServer } from 'node:http';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { MockAgent } from 'undici';
 import type { Tool } from '@modelcontextprotocol/server';
@@ -324,7 +326,7 @@ describe('Legacy 2025-era compatibility', () => {
 describe('Auth enforcement (OIDC, signed tokens from a local issuer)', () => {
   let secured: HttpHandle;
   let secBase: string;
-  let jwks: import('node:http').Server;
+  let jwks: HttpServer;
   let issuerKey: KeyObject | CryptoKey;
   let otherKey: KeyObject | CryptoKey;
   const ISSUER = 'https://issuer.test';
@@ -400,6 +402,8 @@ describe('Auth enforcement (OIDC, signed tokens from a local issuer)', () => {
     await expect(startHttp(deps, { ...base, auth: { provider: 'generic-oidc', issuer: ISSUER, jwksUrl } })).rejects.toThrow(/AUDIENCE/);
     await expect(startHttp(deps, { ...base, auth: { provider: 'generic-oidc', audience: AUDIENCE, jwksUrl } })).rejects.toThrow(/ISSUER/);
     await expect(startHttp(deps, { ...base, host: '0.0.0.0', insecure: true, auth: { provider: 'none' } })).rejects.toThrow(/USPTO_PUBLIC_ORIGIN/);
+    // Authenticated beyond loopback: allowed hosts alone cannot name the URL OAuth metadata advertises.
+    await expect(startHttp(deps, { ...base, host: '0.0.0.0', allowedHosts: ['mcp.example.com'], auth: { provider: 'generic-oidc', issuer: ISSUER, audience: AUDIENCE, jwksUrl } })).rejects.toThrow(/needs USPTO_PUBLIC_ORIGIN/);
   });
 });
 
@@ -416,7 +420,8 @@ describe('Host validation (DNS rebinding)', () => {
     });
   };
   it('rejects a foreign Host even when Origin matches it, and accepts loopback', async () => {
-    expect(await raw('/health', { host: 'attacker.example' })).toBe(421);
+    // /health answers any Host (platform health checks); everything else needs a trusted one.
+    expect(await raw('/health', { host: 'attacker.example' })).toBe(200);
     const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: { _meta: meta() } });
     expect(await raw('/mcp', { host: 'attacker.example', origin: 'http://attacker.example', 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body)).toBe(421);
     expect(await raw('/health', { host: `127.0.0.1:${new URL(base).port}` })).toBe(200);
@@ -531,5 +536,23 @@ describe('Client disconnect cancels the execution', () => {
     } finally {
       await h.close();
     }
+  });
+});
+
+describe('request body cap', () => {
+  it('refuses an oversized body while it is still arriving', async () => {
+    // Announce 2 MiB but send only a little and never finish: a server that buffers the whole body
+    // before checking would wait forever; the cap must answer 413 from the length alone.
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = httpRequest(`${base}/mcp`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'content-length': String(2 * 1024 * 1024) },
+      }, (res) => { res.resume(); resolve(res.statusCode ?? 0); req.destroy(); });
+      // The server answers and closes before the body is done, so the write may fail with EPIPE or ECONNRESET.
+      req.on('error', (err) => { const code = (err as NodeJS.ErrnoException).code; if (code !== 'EPIPE' && code !== 'ECONNRESET') reject(err); });
+      req.write('{"jsonrpc":"2.0"');
+      setTimeout(() => reject(new Error('no response before the body finished')), 5000).unref();
+    });
+    expect(status).toBe(413);
   });
 });

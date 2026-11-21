@@ -5,26 +5,11 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 
 ## [Unreleased]
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ## [0.3.2] - 2026-11-20
 
 ### Fixed
 - bump @better-auth/oauth-provider from 1.7.22 to 1.7.25 (#33) (deps)
+
 ## [0.3.1] - 2026-11-19
 
 ### Fixed
@@ -35,6 +20,7 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 - bump the dev-tooling group with 7 updates (#29) (deps-dev)
 - bump the site group in /site with 3 updates (#28) (deps)
 - daily dependency audit, Dependabot for site/, release only when users get a change (security)
+
 ## [0.3.0] - 2026-11-17
 
 ### Added
@@ -44,26 +30,31 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 - exchange the callback code without branching on Claude's error first (accounts)
 - never lose a replaced Claude connection (accounts)
 - review fixes for linked Claude billing (accounts)
+
 ## [0.2.10] - 2026-11-17
 
 ### Fixed
 - exempt only statute-shaped lists, and accept series 96 (search)
 - keep statute lists that look like patent numbers (search)
+
 ## [0.2.9] - 2026-11-17
 
 ### Changed
 - link SECURITY.md absolutely (templates)
 - add a question template and send key problems to the keys page
+
 ## [0.2.8] - 2026-11-17
 
 ### Fixed
 - drop design, reissue and kind-code patent numbers from queries (search)
 - treat design and US-prefixed patent numbers as identifiers (search)
+
 ## [0.2.7] - 2026-11-17
 
 ### Changed
 - ask for the running version, not the newest release (support)
 - add an issue chooser and a support guide
+
 ## [0.2.6] - 2026-11-17
 
 ### Fixed
@@ -76,6 +67,7 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 ### Changed
 - fail when an excepted advisory's package reaches the production tree
 - show a real rejection in the office-action example
+
 ## [0.2.5] - 2026-11-17
 
 ### Fixed
@@ -91,10 +83,12 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 ### Changed
 - count only this worker's Deno children in the lifecycle test (sandbox)
 - ignore the dev-only picomatch advisory until a fix ships (deps)
+
 ## [0.2.4] - 2026-11-16
 
 ### Fixed
 - limit failed token checks per IP before the database (accounts)
+
 ## [0.2.3] - 2026-11-13
 
 ### Fixed
@@ -104,10 +98,12 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 
 ### Changed
 - the anonymous endpoint has the documentation tools only (accounts)
+
 ## [0.2.2] - 2026-11-13
 
 ### Changed
 - publish to npm directly from CI (release)
+
 ## [0.2.1] - 2026-11-13
 
 ### Fixed
@@ -118,6 +114,7 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 
 ### Changed
 - take the expected version from package.json (release)
+
 ## [0.2.0] - 2026-11-13
 
 ### Added
@@ -136,6 +133,7 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 - publish the documentation site to GitHub Pages (docs)
 - add the documentation site (site)
 - attach the Claude Desktop bundle to the GitHub Release (release)
+
 ## [0.1.2] - 2026-11-13
 
 ### Fixed
@@ -143,6 +141,7 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 
 ### Changed
 - push the release commit as a GitHub App so main can require PRs (release)
+
 ## [0.1.1] - 2026-11-13
 
 ### Fixed
@@ -153,6 +152,7 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 - make Node and @types/node major bumps deliberate (deps)
 - package and release on Node 26 and test with Deno 2.9.8
 - run Node 26 LTS on Debian 13 with Deno 2.9.8, pinned by digest (docker)
+
 ## [0.1.0] - 2026-11-12
 
 ### Added

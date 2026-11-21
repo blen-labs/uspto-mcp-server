@@ -31,6 +31,8 @@ describe('sandbox policy preflight', () => {
     expect(preflight(`return []['constructor']['constructor']`).ok).toBe(false);
     expect(preflight("return [][`prototype`]").ok).toBe(false);
     expect(preflight(`const { constructor: F } = () => {}; return F`).ok).toBe(false);
+    expect(preflight('const { [`constructor`]: F } = () => {}; return F').ok).toBe(false);
+    expect(preflight(`const { ['constructor']: F } = () => {}; return F`).ok).toBe(false);
     expect(preflight(`const r = { a: 1 }; return r['a'] + r.a`).ok).toBe(true);
   });
 
@@ -126,6 +128,7 @@ describe.each([new IsolateRunner(), new DenoRunner()])('$kind runner contract', 
     ['returns values and captures logs', 'console.log("hi", { a: 1 }); return 1 + 2', { ok: true, value: 3 }],
     ['proxies SDK calls', 'return await odp.patents.search({ q: "x" })', { ok: true, value: { binding: 'odp', path: ['patents', 'search'], args: [{ q: 'x' }] } }],
     ['keeps an SDK error\'s name and status', 'try { await odp.fail(); } catch (e) { return [e.name, e.message, e.status]; }', { ok: true, value: ['NotFound', 'nope', 404] }],
+    ['resolves many SDK calls pending at once', 'const r = await Promise.all([1, 2, 3, 4, 5, 6].map(n => odp.patents.search({ n }))); return r.map(x => x.args[0].n)', { ok: true, value: [1, 2, 3, 4, 5, 6] }],
     ['returns null for undefined', 'return undefined', { ok: true, value: null }],
     ['reports a thrown error with its status', 'throw Object.assign(new Error("boom"), { status: 418 })', { ok: false, error: { name: 'Error', message: 'boom', status: 418 } }],
   ] as const)('%s', async ([, code, expected], { skip }) => {
@@ -249,6 +252,8 @@ describe.each([new IsolateRunner(), new DenoRunner()])('$kind runner contract', 
 describe.each([new IsolateRunner(), new DenoRunner()])('$kind runner with a failing bridge', runner => {
   it('gives the program an error when the SDK dispatch itself rejects, and keeps running', async ({ skip }) => {
     if (!(await runner.available())) return skip();
+    // A bridge that rejects with no reason at all: the worst case the runner must survive.
+    // eslint-disable-next-line prefer-promise-reject-errors
     const rejecting = { dispatch: () => Promise.reject(undefined) };
     const res = await runner.execute({ code: 'try { await odp.a(); return "no error"; } catch (e) { return [e.name, e.message]; }', bindings: ['odp'], timeoutMs: 3000 }, rejecting);
     expect(res).toMatchObject({ ok: true, value: ['Error', 'The SDK call failed.'] });
@@ -368,6 +373,14 @@ describe('deno runner isolation (gated on availability)', () => {
     expect(res).toMatchObject({ t: 'done', ok: true, json: JSON.stringify(Array(8).fill('undefined')) });
   });
 
+  it('exits when the host goes away, even while user code is still running', async ({ skip }) => {
+    if (!(await runner.available())) return skip();
+    // A host that crashes or is killed closes the supervisor's stdin; a busy Worker and the memory
+    // watchdog must not keep the process alive as an orphan.
+    const exited = await superviseThenCloseStdin('while (true) {}');
+    expect(exited).toBe(true);
+  });
+
   it('keeps the runtime\'s own diagnostics out of the logs, and names memory when the heap limit ends the process', async ({ skip }) => {
     if (!(await runner.available())) return skip();
     const res = await run('console.log("mine"); const a = []; while (true) a.push(new Array(100000).fill("x" + a.length));', { memoryMb: 32, timeoutMs: 10_000 });
@@ -439,6 +452,30 @@ async function superviseDirectly(code: string): Promise<Record<string, unknown>>
       child.on('exit', code => reject(new Error(`the supervisor exited (code ${code})`)));
       child.on('error', reject);
     });
+  } finally {
+    child.kill('SIGKILL');
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** Starts `code` in a bare supervisor, closes its stdin, and reports whether it exits within 3 s. */
+async function superviseThenCloseStdin(code: string): Promise<boolean> {
+  const { spawn } = await import('node:child_process');
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'uspto-supervisor-test-'));
+  writeFileSync(join(dir, 'supervisor.js'), SUPERVISOR_SOURCE);
+  const child = spawn('deno', ['run', '--no-prompt', '--no-config', '--no-lock', '--no-remote', '--no-npm', '--quiet', join(dir, 'supervisor.js')]);
+  try {
+    const exit = new Promise<boolean>((resolve) => child.on('exit', () => resolve(true)));
+    child.stdout.setEncoding('utf8').once('data', (chunk: string) => {
+      const token = chunk.split('\n')[0]!.replace(/^[A-Z]+-SANDBOX /, '');
+      child.stdin.write(`${token}${JSON.stringify({ t: 'start', code, bindings: [], memoryBytes: 256 * 1024 * 1024, limits: { maxLogBytes: 65536, maxLogLines: 1000, logLineOverhead: 16, logTruncated: '[logs truncated]', maxRpcArgBytes: 65536, maxResultBytes: 262144, maxError: 4000 } })}\n`);
+      // Let the program start, then go away like a crashed host.
+      setTimeout(() => child.stdin.end(), 300);
+    });
+    return await Promise.race([exit, new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 3000))]);
   } finally {
     child.kill('SIGKILL');
     rmSync(dir, { recursive: true, force: true });

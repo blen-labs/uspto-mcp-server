@@ -121,7 +121,7 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (args.rotateKeys) return rotateKeys();
 
-  const accounts = args.http && process.env.USPTO_AUTH_PROVIDER === 'accounts';
+  const accounts = args.http && process.env.USPTO_AUTH_PROVIDER?.trim() === 'accounts';
   if (accounts && args.insecure) throw new Error('Account authentication cannot be combined with --insecure');
   const env = process.env;
   const shutdownController = new AbortController();
@@ -204,7 +204,8 @@ async function main(): Promise<void> {
       allowedOrigins,
       publicOrigin: process.env.USPTO_PUBLIC_ORIGIN,
       auth: {
-        provider: (process.env.USPTO_AUTH_PROVIDER ?? 'none') as AuthProvider,
+        // An empty value (as env templates often pass) means no provider, not an unknown one.
+        provider: (process.env.USPTO_AUTH_PROVIDER?.trim() || 'none') as AuthProvider,
         issuer: process.env.USPTO_AUTH_ISSUER,
         audience: process.env.USPTO_AUTH_AUDIENCE,
         jwksUrl: process.env.USPTO_AUTH_JWKS_URL,

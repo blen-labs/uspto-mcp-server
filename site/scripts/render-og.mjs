@@ -8,6 +8,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import satori from 'satori';
 import sharp from 'sharp';
+import { productName, tagline } from '../product.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 // satori reads WOFF, not WOFF2, so the faces come from the static font packages.
@@ -40,12 +41,12 @@ const svg = await satori(
           element(
             'div',
             { fontSize: 78, fontWeight: 900, lineHeight: 1, letterSpacing: '-0.05em' },
-            'Patents & Trademarks MCP',
+            productName,
           ),
           element(
             'div',
             { marginTop: 18, fontFamily: 'Instrument Serif', fontStyle: 'italic', fontSize: 46, lineHeight: 1.1, color: '#444' },
-            'Ask your AI assistant about U.S. patents and trademarks.',
+            tagline,
           ),
         ]),
       ],

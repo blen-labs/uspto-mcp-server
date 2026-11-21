@@ -83,7 +83,12 @@ export function installPortal(
     return typeof value === 'string' && value.length < 16384 &&
       await verifyOAuthQueryParams(value, config.authSecret) ? value : undefined;
   }
-  const error = (res: Response, status: number, message: string) => res.status(status).json({ error: message });
+  /**
+   * An error the portal shows. `field` names the key field (`apiKey` or `tsdrApiKey`) a problem with a
+   * typed key belongs to, which the page ties to that field; anything else is a page-level notice.
+   */
+  const error = (res: Response, status: number, message: string, field?: string) =>
+    res.status(status).json(field ? { error: message, field } : { error: message });
   async function account(user: { id: string; email: string }) {
     const keys = await store.keyStatus(personalOwner(user.id));
     return { email: user.email, keys, mcpUrl: `${config.origin}${ACCOUNT_MCP_PATH}` };
@@ -92,10 +97,10 @@ export function installPortal(
   async function saveKeys(owner: string, actor: string, body: Record<string, unknown>, res: Response): Promise<boolean> {
     const present = KEY_KINDS.filter(kind => body[KEY_FIELDS[kind]] !== undefined && body[KEY_FIELDS[kind]] !== '');
     if (!present.length) return true;
-    if (!await store.allow(`key:${owner}`, 5, 60)) { error(res, 429, 'Too many key checks. Try again in one minute.'); return false; }
+    if (!await store.allow(`key:${owner}`, 5, 60)) { error(res, 429, 'Too many key checks. Try again in one minute.', KEY_FIELDS[present[0]!]); return false; }
     for (const kind of present) {
       const problem = await checkKey(kind, body[KEY_FIELDS[kind]], fetcher);
-      if (problem) { error(res, 400, problem); return false; }
+      if (problem) { error(res, 400, problem, KEY_FIELDS[kind]); return false; }
     }
     for (const kind of present) await store.saveKey(owner, kind, body[KEY_FIELDS[kind]] as string, actor);
     return true;

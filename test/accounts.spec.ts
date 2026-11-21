@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createServer, get as httpGet, type Server } from 'node:http';
 import { createHash, randomBytes } from 'node:crypto';
-import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Pool } from 'pg';
@@ -45,6 +45,7 @@ it('rejects unsafe origins, missing secrets, and unsafe OAuth redirects', () => 
   const invalid = { USPTO_PUBLIC_ORIGIN: 'https://example.com', BETTER_AUTH_SECRET: 's'.repeat(32), ENCRYPTION_KEYS_JSON: '{"key":"sensitive-key-material"' };
   try { loadAccountConfig(invalid); throw new Error('Expected invalid JSON to fail'); }
   catch (error) { expect(String(error)).not.toContain('sensitive-key-material'); expect(String(error)).toContain('must be valid JSON'); }
+  // eslint-disable-next-line no-script-url -- asserting that a javascript: redirect is refused
   for (const url of ['http://evil.example/cb', 'javascript:alert(1)', 'https://user:pass@example.com', 'https://example.com/#fragment']) expect(allowedRedirect(url)).toBe(false);
   expect(allowedRedirect('https://claude.ai/api/mcp/auth_callback')).toBe(true);
   expect(allowedRedirect('http://127.0.0.1:1234/cb')).toBe(true);
@@ -376,7 +377,7 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
   // Needs the Vite bundle: `pnpm build` (CI builds before testing). Skipped, not failed, without it.
   const webBuilt = existsSync(new URL('../dist/web/index.html', import.meta.url));
   it.skipIf(!webBuilt)('serves the SAM.gov-style frontend and policies with same-origin assets (needs pnpm build)', async () => {
-    for (const path of ['/', '/sign-in', '/account', '/connect', '/consent', '/privacy-policy', '/terms']) {
+    for (const path of ['/', '/sign-in', '/account', '/connect', '/consent', '/privacy-policy', '/terms', '/error']) {
       const page = await fetch(`${config.origin}${path}`);
       expect(page.status).toBe(200);
       expect(page.headers.get('content-security-policy')).toContain("script-src 'self'");
@@ -391,6 +392,57 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
       }
     }
     expect(await (await fetch(`${config.origin}/api/portal/config`)).json()).toMatchObject({ google: true, email: false });
+    // An unknown path: a browser navigation gets the portal's not-found page with status 404;
+    // an API client keeps the short text answer.
+    // fetch() always sends `sec-fetch-mode: cors`, so send a browser navigation with node:http.
+    const { port } = new URL(config.origin);
+    const page = await new Promise<{ status?: number; type?: string; body: string }>((resolve, reject) =>
+      httpGet({ host: '127.0.0.1', port, path: '/no-such-page', headers: { host: new URL(config.origin).host, 'sec-fetch-mode': 'navigate', accept: 'text/html' } }, (res) => {
+        let body = '';
+        res.setEncoding('utf8').on('data', (chunk: string) => (body += chunk)).on('end', () => resolve({ status: res.statusCode, type: res.headers['content-type'], body }));
+      }).on('error', reject));
+    expect(page.status).toBe(404);
+    expect(page.type).toContain('text/html');
+    expect(page.body).toContain('/assets/');
+    const api = await fetch(`${config.origin}/no-such-page`, { headers: { accept: 'application/json' } });
+    expect(api.status).toBe(404);
+    expect(await api.text()).toBe('Not found');
+  });
+  // The policy URLs are registered as the connector's privacy policy, so their text must be in the
+  // HTML itself (web/prerender.ts), not only rendered by the script. node:http: no JavaScript runs.
+  it.skipIf(!webBuilt)('serves the policy pages with their text in the HTML, without running JavaScript (needs pnpm build)', async () => {
+    const { port, host } = new URL(config.origin);
+    const get = (path: string) => new Promise<{ status?: number; csp?: string | string[]; body: string }>((resolve, reject) =>
+      httpGet({ host: '127.0.0.1', port, path, headers: { host } }, (res) => {
+        let body = '';
+        res.setEncoding('utf8').on('data', (chunk: string) => (body += chunk)).on('end', () => resolve({ status: res.statusCode, csp: res.headers['content-security-policy'], body }));
+      }).on('error', reject));
+    const pages = [
+      { path: '/privacy-policy', title: 'Privacy policy', source: 'privacy-policy.md' },
+      { path: '/terms', title: 'Terms of service', source: 'terms.md' },
+    ];
+    const plain = (html: string) => {
+      // Strip tags until none are left: one pass can leave a tag assembled from the pieces around a removed one.
+      let text = html;
+      for (let prev = ''; prev !== text; ) { prev = text; text = text.replace(/<[^>]*>/g, ''); }
+      return text.replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n))).replace(/&amp;/g, '&');
+    };
+    for (const { path, title, source } of pages) {
+      const headings = [...readFileSync(new URL(`../legal/${source}`, import.meta.url), 'utf8').matchAll(/^## (.+)$/gm)].map((m) => m[1]!);
+      expect(headings.length).toBeGreaterThan(3);
+      for (const url of [path, `${path}/`]) {
+        const page = await get(url);
+        expect(page.status, url).toBe(200);
+        expect(page.csp).toContain("script-src 'self'");
+        expect(page.body).toMatch(new RegExp(`<title>${title} · `));
+        expect(page.body).toMatch(new RegExp(`<h1[^>]*>${title}</h1>`));
+        expect(page.body).toContain('<main id="main"');
+        const text = plain(page.body);
+        for (const heading of headings) expect(text, heading).toContain(heading);
+        expect(page.body).toContain('<script type="module"');
+        expect(page.body).not.toMatch(/<script(?![^>]*\bsrc=)/);
+      }
+    }
   });
   // OAuth 2.0 lets a client with one registered URI omit redirect_uri. Better Auth refuses that, so
   // a signed Connect/Consent query always names one; the portal still answers 400, not 500, without it.
@@ -412,13 +464,21 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     expect((await send(browser, '/api/portal/connect', payload, 'https://evil.example')).status).toBe(403);
     expect((await send(browser, '/api/portal/connect', { ...payload, oauth_query: `${oauth_query}&client_id=attacker` })).status).toBe(400);
     expect((await send(browser, '/api/portal/connect', { ...payload, owner: personalOwner(bob.id) })).status).toBe(400);
+    // Not about a typed key: no field, so the page shows a notice instead of a field error.
+    const expired = await send(browser, '/api/portal/connect', { ...payload, oauth_query: `${oauth_query}&client_id=attacker` });
+    expect(await expired.json()).toEqual({ error: 'Connection authorization failed.' });
     const info = await browser(`${config.origin}/api/portal/connect?oauth_query=${encodeURIComponent(oauth_query)}`);
     expect(await info.json()).toMatchObject({ email: alice.email, client: 'Test assistant', keys: { odp: { connected: false }, tsdr: { connected: false } } });
     expect((await send(browser, '/api/portal/connect', { ...payload, apiKey: key, tsdrApiKey: tsdrKey })).status).toBe(200);
     expect(await store.getKey(personalOwner(alice.id), 'odp')).toBe(key);
     expect(await store.getKey(personalOwner(alice.id), 'tsdr')).toBe(tsdrKey);
     validationStatus = 403;
-    expect((await send(browser, '/api/portal/connect', { ...payload, apiKey: 'z'.repeat(32) })).status).toBe(400);
+    const rejectedOdp = await send(browser, '/api/portal/connect', { ...payload, apiKey: 'z'.repeat(32) });
+    expect(rejectedOdp.status).toBe(400);
+    expect((await rejectedOdp.json() as any).field).toBe('apiKey');
+    const rejectedTsdr = await send(browser, '/api/portal/connect', { ...payload, tsdrApiKey: 'z'.repeat(32) });
+    expect(rejectedTsdr.status).toBe(400);
+    expect((await rejectedTsdr.json() as any).field).toBe('tsdrApiKey');
     validationStatus = 200;
     expect(await store.getKey(personalOwner(alice.id), 'odp')).toBe(key);
     const denied = await send(browser, '/api/portal/connect', { oauth_query, decision: 'deny' });
@@ -445,12 +505,20 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     expect(JSON.stringify(account)).not.toContain(key);
     expect(account.keys).toMatchObject({ odp: { connected: true }, tsdr: { connected: false } });
     validationStatus = 403;
-    expect((await send(browser, '/api/portal/keys', { apiKey: 'z'.repeat(32) })).status).toBe(400);
+    const rejected = await send(browser, '/api/portal/keys', { apiKey: 'z'.repeat(32) });
+    expect(rejected.status).toBe(400);
+    expect(await rejected.json()).toMatchObject({ field: 'apiKey' });
+    const rejectedTsdr = await send(browser, '/api/portal/keys', { tsdrApiKey: 'z'.repeat(32) });
+    expect(rejectedTsdr.status).toBe(400);
+    expect(await rejectedTsdr.json()).toMatchObject({ field: 'tsdrApiKey' });
     validationStatus = 200;
+    await pool.query('DELETE FROM request_limits'); // the checks above spent this account's key-check budget
     expect(await store.getKey(personalOwner(alice.id), 'odp')).toBe(key);
     // An empty body or an unknown kind is refused; a ciphertext never opens as the other kind.
     expect((await send(browser, '/api/portal/keys', {})).status).toBe(400);
-    expect((await send(browser, '/api/portal/keys/delete', { kind: 'regs' })).status).toBe(400);
+    const unknownKind = await send(browser, '/api/portal/keys/delete', { kind: 'regs' });
+    expect(unknownKind.status).toBe(400);
+    expect((await unknownKind.json() as any).field).toBeUndefined();
     await pool.query("INSERT INTO credentials(owner,kind,ciphertext) SELECT owner,'tsdr',ciphertext FROM credentials WHERE owner=$1 AND kind='odp'", [personalOwner(alice.id)]);
     await expect(store.getKey(personalOwner(alice.id), 'tsdr')).rejects.toThrow();
     await pool.query("DELETE FROM credentials WHERE owner=$1 AND kind='tsdr'", [personalOwner(alice.id)]);
@@ -570,6 +638,8 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     mock.get(ODP)
       .intercept({ path: '/api/v1/patent/trials/proceedings/IPR0000-00000', method: 'GET', headers: { 'x-api-key': key } })
       .reply(404, { errorDetails: key });
+    // The `${...}` is sandbox source (a template literal that runs inside execute), not a typo.
+    // eslint-disable-next-line no-template-curly-in-string
     const missing = await mcp(a.access_token, 'try { await odp.ptab.proceedings.get("IPR0000-00000"); } catch (e) { return `${e.name}: ${e.message} ${e.status}`; }');
     expect(missing.body).toContain('NotFound');
     expect(missing.body).toContain('404');
@@ -636,6 +706,19 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     expect((await send(browser, '/api/portal/keys', { apiKey: 'x'.repeat(9000) })).status).toBe(413);
     expect((await send(fetch, '/api/auth/oauth2/register', { redirect_uris: ['http://evil.example/cb'] })).status).toBe(400);
     const a = await token();
+    // Hosted connectors send their own Origin on the signed-in endpoint; with a valid bearer token
+    // (never a cookie) and the Host check in place, they must be served.
+    for (const origin of ['https://claude.ai', 'https://chatgpt.com']) {
+      const hosted = await fetch(`${config.origin}/mcp/account`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${a.access_token}`, origin, 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+      });
+      expect(hosted.status, origin).toBe(200);
+      expect(hosted.headers.get('access-control-allow-origin')).toBe('*');
+    }
+    // The anonymous endpoint has no token to check, so another site's page is refused there.
+    expect((await fetch(`${config.origin}/mcp`, { method: 'POST', headers: { origin: 'https://evil.example', 'content-type': 'application/json' }, body: '{}' })).status).toBe(403);
     await (await service.auth.$context).adapter.update({ model: 'user', where: [{ field: 'id', value: alice.id }], update: { emailVerified: false } });
     expect((await mcp(a.access_token)).status).toBe(401);
     await (await service.auth.$context).adapter.update({ model: 'user', where: [{ field: 'id', value: alice.id }], update: { emailVerified: true } });

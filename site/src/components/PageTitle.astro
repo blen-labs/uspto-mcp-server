@@ -21,6 +21,7 @@ const prompt =
         <button class="action" type="button" data-copy-page={markdownHref}>
           <span data-label>Copy page</span>
         </button>
+        <span class="sr-only" role="status" data-copy-status></span>
         <details class="menu">
           <summary class="action">Open</summary>
           <ul>
@@ -47,6 +48,8 @@ const prompt =
 <script>
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-copy-page]')) {
     const label = button.querySelector('[data-label]')!;
+    // The button text changes for sighted users; the status region announces the result.
+    const status = button.parentElement!.querySelector('[data-copy-status]')!;
     button.addEventListener('click', async () => {
       const text = fetch(button.dataset.copyPage!).then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -62,10 +65,15 @@ const prompt =
           await navigator.clipboard.writeText(await text);
         }
         label.textContent = 'Copied';
+        status.textContent = 'Page copied as Markdown';
       } catch {
         label.textContent = 'Copy failed';
+        status.textContent = 'Could not copy the page';
       }
-      setTimeout(() => (label.textContent = 'Copy page'), 2000);
+      setTimeout(() => {
+        label.textContent = 'Copy page';
+        status.textContent = '';
+      }, 2000);
     });
   }
 
@@ -118,7 +126,8 @@ const prompt =
     display: none;
   }
   .menu > summary::after {
-    content: ' ▾';
+    /* Decoration: the alternative text after the slash is empty, so it is not read aloud. */
+    content: ' ▾' / '';
   }
   .menu ul {
     position: absolute;

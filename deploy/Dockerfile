@@ -7,7 +7,7 @@
 FROM node:26-trixie-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc AS builder
 WORKDIR /app
 # Node 25+ no longer bundles corepack; install the pnpm that package.json "packageManager" pins.
-RUN npm install -g --ignore-scripts pnpm@10.33.0
+RUN npm install -g --ignore-scripts pnpm@12.21.0
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs ./
 RUN pnpm install --frozen-lockfile
@@ -24,7 +24,7 @@ RUN pnpm build && pnpm prune --prod
 # its link check reads package.json and release.yml.
 FROM node:26-trixie-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc AS docs
 WORKDIR /repo
-RUN npm install -g --ignore-scripts pnpm@10.33.0
+RUN npm install -g --ignore-scripts pnpm@12.21.0
 COPY site/package.json site/pnpm-lock.yaml site/pnpm-workspace.yaml ./site/
 RUN cd site && pnpm install --frozen-lockfile
 COPY site ./site

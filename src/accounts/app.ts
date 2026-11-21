@@ -54,6 +54,38 @@ function jsonOrForm(body: Buffer): { get(name: string): string | null } {
   }
   return new URLSearchParams(text);
 }
+/** The columns of a Better Auth `oauthAccessToken` row that bearer checks read. */
+type AccessTokenRow = {
+  userId?: string | null;
+  clientId: string;
+  revoked?: boolean | Date | null;
+  expiresAt: Date | string;
+  resources?: string[] | null;
+  scopes?: string[] | string | null;
+};
+
+/** Client-side routes of the portal (web/src/main.tsx), served as index.html. */
+const PORTAL_ROUTES = ['/', '/sign-in', '/connect', '/consent', '/account', '/error'];
+/** Portal routes with their own prerendered page in dist/web (web/vite.config.ts). */
+const PRERENDERED_ROUTES: Record<string, string> = { '/privacy-policy': 'privacy-policy.html', '/terms': 'terms.html' };
+const PORTAL_CSP =
+  "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
+
+/** A top-level page load in a browser (not fetch, not an API client). */
+function isNavigation(req: express.Request): boolean {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return false;
+  const mode = req.get('sec-fetch-mode');
+  if (mode) return mode === 'navigate';
+  return req.accepts(['json', 'html']) === 'html';
+}
+
+const TOO_MANY_PAGE = `<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Too many requests · Patents &amp; Trademarks MCP</title></head>
+<body><main><h1>Too many requests</h1><p>This address sent too many requests. Wait a minute, then <a href="/">try again</a>.</p></main></body>
+</html>
+`;
+
 /** MCP's rule for redirect URIs: HTTPS, or plain HTTP only to this computer. */
 export function allowedRedirect(value: unknown) {
   if (typeof value !== 'string') return false;
@@ -186,17 +218,31 @@ export async function createAccountApp(
       res.redirect(301, `${DOCS_PATH}/${query === undefined ? '' : `?${query}`}`);
     });
   }
-  // Production reads the built page once; development rereads it so `pnpm dev:web` rebuilds show.
-  const loadIndex = () => readFile(resolve(webRoot, 'index.html'), 'utf8').catch(() => undefined);
-  let indexHtml: string | undefined;
-  app.get(['/', '/sign-in', '/connect', '/consent', '/account', '/privacy-policy', '/terms'], async (_req, res) => {
-    const html = config.production ? (indexHtml ??= await loadIndex()) : await loadIndex();
+  // Production reads each built page once; development rereads them so `pnpm dev:web` rebuilds show.
+  const pages = new Map<string, string>();
+  const loadPage = (file: string) => readFile(resolve(webRoot, file), 'utf8').catch(() => undefined);
+  const sendPortal = async (res: express.Response, status = 200, file = 'index.html') => {
+    const html = config.production ? (pages.get(file) ?? (await loadPage(file))) : await loadPage(file);
     if (!html) return res.status(503).send('The web interface is not built. Run pnpm build.');
-    res.set('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
-      .type('html').send(html);
+    if (config.production) pages.set(file, html);
+    res.status(status).set('Content-Security-Policy', PORTAL_CSP).type('html').send(html);
+  };
+  // The policy pages are prerendered at build time (web/prerender.ts), so their text is in the
+  // HTML for clients that do not run JavaScript: crawlers, link checkers, directory reviewers.
+  app.get(Object.keys(PRERENDERED_ROUTES), async (req, res) => {
+    await sendPortal(res, 200, PRERENDERED_ROUTES[req.path.replace(/(?<=.)\/$/, '')]);
   });
-  const tooMany = (res: express.Response) =>
-    res.status(429).set('Retry-After', '60').send('Too many requests');
+  app.get(PORTAL_ROUTES, async (_req, res) => {
+    await sendPortal(res);
+  });
+  const tooMany = (res: express.Response) => {
+    res.status(429).set('Retry-After', '60');
+    // A person in a browser gets a page; API clients get the short text they always did.
+    if (isNavigation(res.req)) {
+      return res.set('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'; base-uri 'none'").type('html').send(TOO_MANY_PAGE);
+    }
+    return res.send('Too many requests');
+  };
   app.use(async (req, res, next) => {
     // Hosted connectors (ChatGPT, Claude) send every user's OAuth and MCP traffic from a few
     // shared egress IPs, so those endpoints are limited elsewhere: Better Auth limits each OAuth
@@ -209,9 +255,11 @@ export async function createAccountApp(
     next();
   });
   const mcpNode = toNodeHandler(mcp, {
+    maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
     onerror: () => log.warn('account.mcp_http_error'),
   });
   const publicNode = toNodeHandler(publicMcp, {
+    maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
     onerror: () => log.warn('account.public_mcp_http_error'),
   });
   // In memory per replica, like the base transport's limiter it mirrors.
@@ -221,7 +269,10 @@ export async function createAccountApp(
   app.all(PUBLIC_MCP_PATH, async (req, res) => {
     if (!publicLimiter.allow(ipOf(req) ?? 'unknown')) return tooMany(res);
     // As in the base transport (MCP's Origin rule): with no token to check, a browser on another
-    // site must not drive this endpoint. Non-browser clients send no Origin and pass.
+    // site must not drive this endpoint. Non-browser clients send no Origin and pass. The signed-in
+    // endpoint below accepts any Origin: hosted connectors (claude.ai, chatgpt.com) send theirs,
+    // every request carries a bearer token (never a cookie), and the Host check above already
+    // blocks DNS rebinding, which is what the Origin rule exists to prevent.
     const origin = req.headers.origin;
     if (typeof origin === 'string' && !originAllowed(origin, config.origin, config.allowedOrigins ?? []))
       return res.status(403).json({ error: 'origin_not_allowed' });
@@ -255,7 +306,7 @@ export async function createAccountApp(
     // Opaque tokens are checked against their hashed database row on every request, so
     // revocation, client disabling, user deletion and loss of email verification apply immediately.
     const context = await auth.$context;
-    const token = await context.adapter.findOne<any>({
+    const token = await context.adapter.findOne<AccessTokenRow>({
       model: 'oauthAccessToken',
       where: [{ field: 'token', value: digest(value) }],
     });
@@ -267,11 +318,11 @@ export async function createAccountApp(
     )
       return challenge(401, 'invalid_token');
     const [client, user] = await Promise.all([
-      context.adapter.findOne<any>({
+      context.adapter.findOne<{ disabled?: boolean | null }>({
         model: 'oauthClient',
         where: [{ field: 'clientId', value: token.clientId }],
       }),
-      context.adapter.findOne<any>({
+      context.adapter.findOne<{ id: string; emailVerified?: boolean | null }>({
         model: 'user',
         where: [{ field: 'id', value: token.userId }],
       }),
@@ -409,7 +460,12 @@ export async function createAccountApp(
     },
   );
   installPortal(app, config, store, auth, fetcher, ipOf);
-  app.use((_req, res) => res.status(404).send('Not found'));
+  // Unknown paths: a person in a browser gets the portal's own not-found page (status 404);
+  // API clients get the short text they always did.
+  app.use(async (req, res) => {
+    if (isNavigation(req)) return sendPortal(res, 404);
+    res.status(404).send('Not found');
+  });
   app.use(
     (error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       if (

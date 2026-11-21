@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { KEY_INFO, KeyField } from '@/components/fields';
-import { Loading, Notice, Shell, SignedInAs, SignOut } from '@/components/shell';
-import { api, type ClaudeLinkStatus, type KeyKind, type Keys } from '@/lib/api';
+import { Notice } from '@/components/kit/notice';
+import { Loading, Shell, SignedInAs, SignOut } from '@/components/kit/shell';
+import { api, failure, type ClaudeLinkStatus, type Failure, type KeyKind, type Keys } from '@/lib/api';
 import { useLoad } from '@/lib/use-load';
 
 function KeyCard({
@@ -18,10 +19,11 @@ function KeyCard({
 }) {
   const info = KEY_INFO[kind];
   const [apiKey, setApiKey] = useState('');
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<Failure>();
   const [busy, setBusy] = useState(false);
   /** Runs a change; the server's warning, if any, replaces the success notice. */
   async function run(action: () => Promise<{ warning?: string }>, notice: string) {
+    if (busy) return;
     setBusy(true);
     setError(undefined);
     try {
@@ -29,7 +31,7 @@ function KeyCard({
       setApiKey('');
       onChanged(result.warning ?? notice);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong.');
+      setError(failure(e));
     } finally {
       setBusy(false);
     }
@@ -37,17 +39,20 @@ function KeyCard({
   return (
     <Card className="shadow-none">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+        <CardTitle asChild className="flex items-center gap-2">
+          <h2>
           {info.name}
           <Badge variant={connected ? 'default' : 'outline'}>
             {connected ? 'Key saved' : 'No key'}
           </Badge>
+          </h2>
         </CardTitle>
         <CardDescription>
           Used for {info.covers} in your signed-in connections. It is never displayed again.
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="grid gap-4">
+          {error && error.field !== info.field && <Notice>{error.message}</Notice>}
           <form
             className="grid gap-4"
             onSubmit={(e) => {
@@ -55,25 +60,25 @@ function KeyCard({
               void run(() => api('/keys', { [info.field]: apiKey }), `Key saved. USPTO accepted your ${info.name}.`);
             }}
           >
-            {error && <Notice>{error}</Notice>}
             <KeyField
               kind={kind}
               label={connected ? 'Replace key' : info.name}
               required
               value={apiKey}
               onChange={setApiKey}
+              error={error?.field === info.field ? error.message : undefined}
             />
             <div className="flex flex-wrap gap-3">
-              <Button type="submit" disabled={busy}>
+              <Button type="submit" aria-disabled={busy}>
                 Check and save
               </Button>
               {connected && (
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={busy}
+                  aria-disabled={busy}
                   onClick={() =>
-                    run(
+                    void run(
                       () => api('/keys/delete', { kind }),
                       `${info.name} removed. Your other key, if any, keeps working.`,
                     )
@@ -109,6 +114,7 @@ function ClaudeCard({ status, onChanged }: { status: ClaudeLinkStatus; onChanged
     return () => window.removeEventListener('pageshow', restored);
   }, []);
   async function link() {
+    if (busy) return;
     setBusy(true);
     setError(undefined);
     try {
@@ -120,6 +126,7 @@ function ClaudeCard({ status, onChanged }: { status: ClaudeLinkStatus; onChanged
     }
   }
   async function unlink() {
+    if (busy) return;
     setBusy(true);
     setError(undefined);
     try {
@@ -134,9 +141,11 @@ function ClaudeCard({ status, onChanged }: { status: ClaudeLinkStatus; onChanged
   return (
     <Card className="shadow-none">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          Claude billing
-          <Badge variant={status.linked ? 'default' : 'outline'}>{status.linked ? 'Linked' : 'Not linked'}</Badge>
+        <CardTitle asChild className="flex items-center gap-2">
+          <h2>
+            Claude billing
+            <Badge variant={status.linked ? 'default' : 'outline'}>{status.linked ? 'Linked' : 'Not linked'}</Badge>
+          </h2>
         </CardTitle>
         <CardDescription>
           Link your own Claude Platform organization so Claude usage on this site is billed to it. A member of that
@@ -148,11 +157,11 @@ function ClaudeCard({ status, onChanged }: { status: ClaudeLinkStatus; onChanged
         {error && <Notice>{error}</Notice>}
         <div className="flex flex-wrap gap-3">
           {status.linked ? (
-            <Button type="button" variant="outline" disabled={busy} onClick={() => void unlink()}>
+            <Button type="button" variant="outline" aria-disabled={busy} onClick={() => void unlink()}>
               Unlink
             </Button>
           ) : (
-            <Button type="button" disabled={busy} onClick={() => void link()}>
+            <Button type="button" aria-disabled={busy} onClick={() => void link()}>
               Link Claude organization
             </Button>
           )}
@@ -171,6 +180,12 @@ export function Account() {
     if (new URLSearchParams(window.location.search).has('claude')) window.history.replaceState(null, '', '/account');
   }, []);
   const [notice, setNotice] = useState<string>();
+  // After a change, move focus to its confirmation: the button that made it may be gone
+  // (a removed key's card no longer offers "Remove key").
+  const noticeRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (notice) noticeRef.current?.focus();
+  }, [notice]);
   if (error)
     return (
       <Shell title="Your account">
@@ -185,8 +200,10 @@ export function Account() {
       description={<SignedInAs email={data.email} />}
       action={<SignOut then="/" />}
     >
-      {notice && <Notice kind="success">{notice}</Notice>}
-      {!notice && linkResult && <Notice kind={linkResult.kind}>{linkResult.text}</Notice>}
+      <div ref={noticeRef} tabIndex={-1} className="grid gap-3 outline-none empty:hidden">
+        {notice && <Notice kind="success">{notice}</Notice>}
+        {!notice && linkResult && <Notice kind={linkResult.kind}>{linkResult.text}</Notice>}
+      </div>
       {(['odp', 'tsdr'] as const).map((kind) => (
         <KeyCard
           key={kind}
