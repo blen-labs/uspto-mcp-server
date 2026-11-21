@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import express from 'express';
 import { createHash } from 'node:crypto';
 import { get } from 'node:http';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
@@ -57,6 +57,26 @@ describe('documentation site handler', () => {
       }
       expect((await fetch(`${base}/docs/`, { method: 'POST' })).status).toBe(404);
     } finally {
+      server.close();
+    }
+  });
+
+  it.skipIf(process.getuid?.() === 0)('reports a file it cannot read as a server error, not a 404', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'docs-locked-'));
+    writeFileSync(join(root, 'index.html'), '<html></html>');
+    writeFileSync(join(root, '404.html'), '<html>Not found</html>');
+    const locked = join(root, 'locked.html');
+    writeFileSync(locked, '<html></html>');
+    chmodSync(locked, 0o000);
+    const app = express().use('/docs', docsHandler(root)!);
+    app.use(((_err, _req, res, _next) => { res.status(500).end(); }) as express.ErrorRequestHandler);
+    const server = app.listen(0);
+    try {
+      const res = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/docs/locked.html`);
+      expect(res.status).toBe(500);
+      await res.arrayBuffer();
+    } finally {
+      chmodSync(locked, 0o600);
       server.close();
     }
   });
