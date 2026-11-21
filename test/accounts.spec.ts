@@ -652,26 +652,19 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     expect((await send(browser, '/api/portal/keys', { apiKey: 'x'.repeat(9000) })).status).toBe(413);
     expect((await send(fetch, '/api/auth/oauth2/register', { redirect_uris: ['http://evil.example/cb'] })).status).toBe(400);
     const a = await token();
-    // A valid token does not let another site's page drive the signed-in endpoint.
-    const foreign = await fetch(`${config.origin}/mcp/account`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${a.access_token}`, origin: 'https://evil.example', 'content-type': 'application/json' },
-      body: '{}',
-    });
-    expect(foreign.status).toBe(403);
-    expect(await foreign.json()).toEqual({ error: 'origin_not_allowed' });
-    // A browser client fails at the preflight with a clear status, and CORS never says `*` for
-    // an MCP endpoint; the server's own origin is echoed.
-    const preflight = (origin: string) => fetch(`${config.origin}/mcp/account`, {
-      method: 'OPTIONS', headers: { origin, 'access-control-request-method': 'POST', 'access-control-request-headers': 'authorization,content-type' },
-    });
-    expect((await preflight('https://evil.example')).status).toBe(403);
-    const own = await preflight(config.origin);
-    expect(own.status).toBe(204);
-    expect(own.headers.get('access-control-allow-origin')).toBe(config.origin);
-    // OAuth discovery stays open to every client.
-    const discovery = await fetch(`${config.origin}/.well-known/oauth-protected-resource/mcp/account`, { headers: { origin: 'https://app.example' } });
-    expect(discovery.headers.get('access-control-allow-origin')).toBe('*');
+    // Hosted connectors send their own Origin on the signed-in endpoint; with a valid bearer token
+    // (never a cookie) and the Host check in place, they must be served.
+    for (const origin of ['https://claude.ai', 'https://chatgpt.com']) {
+      const hosted = await fetch(`${config.origin}/mcp/account`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${a.access_token}`, origin, 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+      });
+      expect(hosted.status, origin).toBe(200);
+      expect(hosted.headers.get('access-control-allow-origin')).toBe('*');
+    }
+    // The anonymous endpoint has no token to check, so another site's page is refused there.
+    expect((await fetch(`${config.origin}/mcp`, { method: 'POST', headers: { origin: 'https://evil.example', 'content-type': 'application/json' }, body: '{}' })).status).toBe(403);
     await (await service.auth.$context).adapter.update({ model: 'user', where: [{ field: 'id', value: alice.id }], update: { emailVerified: false } });
     expect((await mcp(a.access_token)).status).toBe(401);
     await (await service.auth.$context).adapter.update({ model: 'user', where: [{ field: 'id', value: alice.id }], update: { emailVerified: true } });
