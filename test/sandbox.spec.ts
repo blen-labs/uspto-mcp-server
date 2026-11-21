@@ -249,6 +249,8 @@ describe.each([new IsolateRunner(), new DenoRunner()])('$kind runner contract', 
 describe.each([new IsolateRunner(), new DenoRunner()])('$kind runner with a failing bridge', runner => {
   it('gives the program an error when the SDK dispatch itself rejects, and keeps running', async ({ skip }) => {
     if (!(await runner.available())) return skip();
+    // A bridge that rejects with no reason at all: the worst case the runner must survive.
+    // eslint-disable-next-line prefer-promise-reject-errors
     const rejecting = { dispatch: () => Promise.reject(undefined) };
     const res = await runner.execute({ code: 'try { await odp.a(); return "no error"; } catch (e) { return [e.name, e.message]; }', bindings: ['odp'], timeoutMs: 3000 }, rejecting);
     expect(res).toMatchObject({ ok: true, value: ['Error', 'The SDK call failed.'] });

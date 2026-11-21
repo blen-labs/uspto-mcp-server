@@ -1,4 +1,4 @@
-import { HttpClient } from '../util/httpClient.js';
+import { type HttpClient } from '../util/httpClient.js';
 
 /**
  * TSDR case id: 'sn' + 8-digit serial number, 'rn' + registration number (up to 8 digits),

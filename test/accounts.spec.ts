@@ -45,6 +45,7 @@ it('rejects unsafe origins, missing secrets, and unsafe OAuth redirects', () => 
   const invalid = { USPTO_PUBLIC_ORIGIN: 'https://example.com', BETTER_AUTH_SECRET: 's'.repeat(32), ENCRYPTION_KEYS_JSON: '{"key":"sensitive-key-material"' };
   try { loadAccountConfig(invalid); throw new Error('Expected invalid JSON to fail'); }
   catch (error) { expect(String(error)).not.toContain('sensitive-key-material'); expect(String(error)).toContain('must be valid JSON'); }
+  // eslint-disable-next-line no-script-url -- asserting that a javascript: redirect is refused
   for (const url of ['http://evil.example/cb', 'javascript:alert(1)', 'https://user:pass@example.com', 'https://example.com/#fragment']) expect(allowedRedirect(url)).toBe(false);
   expect(allowedRedirect('https://claude.ai/api/mcp/auth_callback')).toBe(true);
   expect(allowedRedirect('http://127.0.0.1:1234/cb')).toBe(true);

@@ -1,4 +1,4 @@
-import { HttpClient, HttpError } from '../util/httpClient.js';
+import { type HttpClient, HttpError } from '../util/httpClient.js';
 
 /**
  * USPTO Open Data Portal (api.uspto.gov). Every search endpoint accepts the same JSON body;

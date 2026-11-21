@@ -125,7 +125,8 @@ export async function startHttp(deps: CatalogDeps, opts: HttpOptions): Promise<H
     onerror: (err) => log.warn('mcp.adapter.error', { error: truncate(err.message) }),
   });
 
-  const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+  // Never rejects: every failure is answered inside (500 at worst), so the request is never left hanging.
+  const handle = async (req: IncomingMessage, res: ServerResponse) => {
     try {
       const ip = clientIp(req, opts.clientIpHeader);
       if (!limiter.allow(ip)) return reply(res, 429, { error: 'rate_limited' });
@@ -213,7 +214,8 @@ export async function startHttp(deps: CatalogDeps, opts: HttpOptions): Promise<H
       log.error('http.unhandled', { error: (err as Error).message, stack: (err as Error).stack });
       if (!res.headersSent) reply(res, 500, { error: 'internal' });
     }
-  });
+  };
+  const server = createServer((req, res) => { void handle(req, res); });
 
   let ownOrigin = '';
   let trustedHosts = new Set<string>();

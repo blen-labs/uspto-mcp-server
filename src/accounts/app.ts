@@ -55,6 +55,16 @@ function jsonOrForm(body: Buffer): { get(name: string): string | null } {
   return new URLSearchParams(text);
 }
 /** MCP's rule for redirect URIs: HTTPS, or plain HTTP only to this computer. */
+/** The columns of a Better Auth `oauthAccessToken` row that bearer checks read. */
+type AccessTokenRow = {
+  userId?: string | null;
+  clientId: string;
+  revoked?: boolean | Date | null;
+  expiresAt: Date | string;
+  resources?: string[] | null;
+  scopes?: string[] | string | null;
+};
+
 export function allowedRedirect(value: unknown) {
   if (typeof value !== 'string') return false;
   try {
@@ -255,7 +265,7 @@ export async function createAccountApp(
     // Opaque tokens are checked against their hashed database row on every request, so
     // revocation, client disabling, user deletion and loss of email verification apply immediately.
     const context = await auth.$context;
-    const token = await context.adapter.findOne<any>({
+    const token = await context.adapter.findOne<AccessTokenRow>({
       model: 'oauthAccessToken',
       where: [{ field: 'token', value: digest(value) }],
     });
@@ -267,11 +277,11 @@ export async function createAccountApp(
     )
       return challenge(401, 'invalid_token');
     const [client, user] = await Promise.all([
-      context.adapter.findOne<any>({
+      context.adapter.findOne<{ disabled?: boolean | null }>({
         model: 'oauthClient',
         where: [{ field: 'clientId', value: token.clientId }],
       }),
-      context.adapter.findOne<any>({
+      context.adapter.findOne<{ id: string; emailVerified?: boolean | null }>({
         model: 'user',
         where: [{ field: 'id', value: token.userId }],
       }),
