@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode } from 'react';
 
 /**
  * Everything product-specific the shared portal kit shows. Each server's `src/brand.tsx`

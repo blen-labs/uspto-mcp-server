@@ -1,9 +1,9 @@
-import { BookOpen, GitBranch, LogIn, UserRound } from "lucide-react";
-import { brand } from "@/brand";
-import { useSignedIn } from "@/components/kit/use-signed-in";
+import { BookOpen, GitBranch, LogIn, UserRound } from 'lucide-react';
+import { brand } from '@/brand';
+import { useSignedIn } from '@/components/kit/use-signed-in';
 
 const navLink =
-  "text-muted-foreground hover:text-foreground inline-flex min-h-10 items-center gap-1.5 rounded-md px-2 text-sm font-medium";
+  'text-muted-foreground hover:text-foreground inline-flex min-h-10 items-center gap-1.5 rounded-md px-2 text-sm font-medium';
 
 /** Product name and the site navigation: docs, source, and the account. */
 export function SiteHeader() {
@@ -11,10 +11,7 @@ export function SiteHeader() {
   return (
     <header className="border-b">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
-        <a
-          href="/"
-          className="text-foreground min-h-10 content-center text-base font-semibold tracking-tight"
-        >
+        <a href="/" className="text-foreground min-h-10 content-center text-base font-semibold tracking-tight">
           {brand.name}
         </a>
         <nav aria-label="Site">
