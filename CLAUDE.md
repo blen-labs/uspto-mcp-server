@@ -16,7 +16,7 @@ pnpm typecheck                          # tsc --noEmit (src + test) and web/tsco
 pnpm test                               # vitest run (all test/*.spec.ts, ~15 s, no network/keys needed)
 pnpm test test/search.spec.ts           # single file (args forward to vitest, no -- needed)
 pnpm test test/search.spec.ts -t "bm25" # single test by name (pair with file path to keep it fast)
-pnpm lint                               # eslint: @eslint/js + typescript-eslint recommended, type-aware promise rules in src/, stderr-only console in src/, react-hooks in web/
+pnpm lint                               # eslint: @eslint/js + typescript-eslint recommended, type-aware promise rules in src/, stderr-only console in src/, react-hooks in web/, plus core rules kept from the old Biome setup (no-template-curly-in-string, default-case-last, array-callback-return, no-self-compare, radix, no-constructor-return)
 pnpm test:web                           # build web + site, then Playwright + axe (web/e2e); journey.spec.ts needs TEST_DATABASE_URL + Deno
 pnpm kit:check                          # shared portal kit vs web/portal-kit.json (test/portal-kit.spec.ts runs it too)
 pnpm build                              # tsc -p tsconfig.build.json && pnpm build:web (Vite → dist/web) && chmod

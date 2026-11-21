@@ -42,13 +42,16 @@ export function buildManifest(pkg) {
       entry_point: 'dist/bin.js',
       mcp_config: {
         command: 'node',
-        // ${__dirname} is expanded by the MCPB host to the unpacked bundle dir.
+        // ${__dirname} is expanded by the MCPB host to the unpacked bundle dir. The placeholders
+        // here and in env below are MCPB manifest syntax, deliberately not template literals.
+        /* eslint-disable no-template-curly-in-string */
         args: ['${__dirname}/dist/bin.js'],
         // USPTO keys are personal; the host prompts for them and keeps them in its secure store.
         env: {
           USPTO_API_KEY: '${user_config.uspto_api_key}',
           USPTO_TSDR_API_KEY: '${user_config.uspto_tsdr_api_key}',
         },
+        /* eslint-enable no-template-curly-in-string */
       },
     },
     user_config: {
