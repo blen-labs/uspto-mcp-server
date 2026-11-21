@@ -199,7 +199,13 @@ export function insertChangelogSection(changelog, sectionText, version) {
   const repoUrl = unreleasedLink[1];
   const previous = unreleasedLink[2];
 
-  let out = changelog.replace(/^## \[Unreleased\]\s*$/m, match => `${match}\n\n${sectionText.trimEnd()}`);
+  // The heading and the blank lines under it become exactly: heading, blank, section, blank. A
+  // `\s*$` here would swallow those blank lines into the match and keep them, so the run grew by
+  // one line per release and the next heading lost its separating blank line.
+  let out = changelog.replace(
+    /^## \[Unreleased\][ \t]*\n(?:[ \t]*\n)*/m,
+    `## [Unreleased]\n\n${sectionText.trim()}\n\n`,
+  );
   out = out.replace(
     unreleasedLink[0],
     [

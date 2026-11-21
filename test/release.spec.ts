@@ -226,6 +226,14 @@ describe('insertChangelogSection', () => {
     expect(out).toContain('[2.0.1]: https://github.com/o/r/compare/v2.0.0...v2.0.1');
     expect(out).toContain('[2.0.0]: https://github.com/o/r/compare/v1.0.0...v2.0.0');
   });
+
+  it('keeps one blank line around the new section, release after release', () => {
+    let out = insertChangelogSection(changelog, '## [2.0.1] - 2026-08-07\n\n### Fixed\n- x\n', '2.0.1');
+    out = insertChangelogSection(out, '## [2.0.2] - 2026-08-08\n\n### Fixed\n- y\n', '2.0.2');
+    expect(out).toContain('## [Unreleased]\n\n## [2.0.2] - 2026-08-08\n\n### Fixed\n- y\n\n## [2.0.1]');
+    expect(out).toContain('- x\n\n## [2.0.0]');
+    expect(out).not.toMatch(/\n\n\n/);
+  });
 });
 
 describe('updateVersionMarkers', () => {
