@@ -5,11 +5,12 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { formatSnippet } from '../src/lib/format.mjs';
+import { repo } from '../product.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const source = resolve(here, '../../docs/sdk-reference.md');
 const target = resolve(here, '../src/content/docs/reference/sdk.md');
-const repoDocs = 'https://github.com/blen-labs/uspto-mcp-server/blob/main/docs/';
+const repoDocs = `${repo}/blob/main/docs/`;
 
 const text = readFileSync(source, 'utf8');
 const title = /^# (.+)\n/.exec(text);
@@ -38,7 +39,7 @@ const frontmatter = [
   '---',
   `title: ${title[1]}`,
   'description: Search parameters, identifiers, errors, limits, and every odp and tsdr method.',
-  'editUrl: https://github.com/blen-labs/uspto-mcp-server/edit/main/docs/sdk-reference.md',
+  `editUrl: ${repo}/edit/main/docs/sdk-reference.md`,
   '---',
   '',
 ].join('\n');

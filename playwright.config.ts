@@ -1,8 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// Browser tests of the portal (web/). `pnpm test:web` builds it, serves dist/web with Vite's
-// preview server (client-side routes fall back to index.html) and mocks the portal and auth
-// APIs per test (web/e2e/fixtures.ts), so every page state can be checked without a server.
+// Browser tests of the portal (web/) and the documentation site (site/). `pnpm test:web` builds
+// both, serves dist/web with Vite's preview server (client-side routes fall back to index.html)
+// and site/dist with Astro's, and mocks the portal and auth APIs per test (web/e2e/fixtures.ts),
+// so every page state can be checked without a server.
 export default defineConfig({
   testDir: 'web/e2e',
   fullyParallel: true,
@@ -14,9 +15,16 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
-  webServer: {
-    command: 'pnpm exec vite preview --config web/vite.config.ts --host 127.0.0.1 --port 4173 --strictPort',
-    url: 'http://127.0.0.1:4173',
-    reuseExistingServer: !process.env.CI,
-  },
+  webServer: [
+    {
+      command: 'pnpm exec vite preview --config web/vite.config.ts --host 127.0.0.1 --port 4173 --strictPort',
+      url: 'http://127.0.0.1:4173',
+      reuseExistingServer: !process.env.CI,
+    },
+    {
+      command: 'pnpm --dir site exec astro preview --host 127.0.0.1 --port 4174',
+      url: 'http://127.0.0.1:4174/docs/',
+      reuseExistingServer: !process.env.CI,
+    },
+  ],
 });

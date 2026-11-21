@@ -5,14 +5,12 @@ import { readFileSync } from 'node:fs';
 import starlightLinksValidator from 'starlight-links-validator';
 import starlightLlmsTxt from 'starlight-llms-txt';
 import { groups, pages } from './src/lib/pages.mjs';
+import { base, description, llmsDetails, packageName, productName, repo, site, tagline } from './product.mjs';
 
 // The hosted server serves the built site at /docs (deploy/Dockerfile builds it into the image;
 // src/accounts/docs.ts serves it). To move it, change `site` and `base` here and the base in the
 // two hero links in index.mdx and in scripts/check-links.mjs. Every other link is root-absolute.
-const site = 'https://uspto.mcp.blenlabs.com';
-const base = '/docs';
 
-const repo = 'https://github.com/blen-labs/uspto-mcp-server';
 
 // Astro adds `base` to its own assets and Starlight adds it to the sidebar, but neither touches
 // a link written inside a page. This adds it to root-absolute links in Markdown and in MDX
@@ -53,9 +51,8 @@ export default defineConfig({
   markdown: { processor: unified({ rehypePlugins: [rehypeBase] }) },
   integrations: [
     starlight({
-      title: 'Patents & Trademarks MCP',
-      description:
-        'Connect an AI assistant to the USPTO Open Data Portal and TSDR APIs with the Patents & Trademarks MCP server.',
+      title: productName,
+      description,
       favicon: '/favicon.svg',
       logo: { src: './src/assets/blen-logo-red.svg', alt: 'BLEN' },
       // Geist is BLEN's typeface. The rest of the theme is Starlight's default.
@@ -104,7 +101,7 @@ export default defineConfig({
           tag: 'meta',
           attrs: {
             property: 'og:image:alt',
-            content: 'Patents & Trademarks MCP: ask your AI assistant about U.S. patents and trademarks.',
+            content: `${productName}: ${tagline.charAt(0).toLowerCase()}${tagline.slice(1)}`,
           },
         },
       ],
@@ -124,11 +121,7 @@ export default defineConfig({
         // llms.txt and the Markdown copies are files, not pages, so the validator cannot see them.
         starlightLinksValidator({ exclude: ['/llms.txt', '/llms-full.txt'] }),
         starlightLlmsTxt({
-          details: [
-            'The server runs on the user\'s computer and needs the user\'s own USPTO API keys.',
-            'It has three tools: `search_api`, `describe_schema`, and `execute`.',
-            'Each page below is also available on its own, as Markdown.',
-          ].join('\n'),
+          details: llmsDetails,
           // One document set for each page: its Markdown copy, which the page actions link to.
           customSets: pages.map(({ label, slug }) => ({ label, paths: [slug], description: descriptionOf(slug) })),
           // The link icon beside each heading is noise in Markdown.
@@ -140,7 +133,7 @@ export default defineConfig({
             { label: 'Source code', url: repo, description: 'the server, its tests, and the long guides' },
             {
               label: 'npm package',
-              url: 'https://www.npmjs.com/package/@blen/uspto-mcp-server',
+              url: `https://www.npmjs.com/package/${packageName}`,
               description: 'the published server',
             },
           ],

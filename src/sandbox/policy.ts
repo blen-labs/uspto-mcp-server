@@ -87,6 +87,7 @@ export function preflight(code: string): PolicyResult {
         const key = prop.key;
         const name = key.type === 'Identifier' && !prop.computed ? key.name
           : key.type === 'Literal' && typeof key.value === 'string' ? key.value
+          : key.type === 'TemplateLiteral' && key.expressions.length === 0 ? (key.quasis[0]?.value?.cooked ?? undefined)
           : undefined;
         if (name !== undefined && BANNED_MEMBERS.has(name)) errors.push(`access to .${name} is not allowed`);
       }
