@@ -67,14 +67,16 @@ describe('documentation site handler', () => {
     writeFileSync(join(root, '404.html'), '<html>Not found</html>');
     const locked = join(root, 'locked.html');
     writeFileSync(locked, '<html></html>');
-    chmodSync(locked, 0o000);
+    // The handler reads every page once at startup (for the CSP hashes); lock the file after that.
     const app = express().use('/docs', docsHandler(root)!);
-    app.use(((_err, _req, res, _next) => { res.status(500).end(); }) as express.ErrorRequestHandler);
+    chmodSync(locked, 0o000);
+    app.use(((_err, _req, res, _next) => { res.status(500).end('error'); }) as express.ErrorRequestHandler);
     const server = app.listen(0);
     try {
       const res = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/docs/locked.html`);
       expect(res.status).toBe(500);
-      await res.arrayBuffer();
+      expect(res.headers.get('cache-control')).toBeNull();
+      expect(await res.text()).toBe('error');
     } finally {
       chmodSync(locked, 0o600);
       server.close();
