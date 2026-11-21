@@ -1,6 +1,4 @@
 import { readFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
@@ -13,10 +11,10 @@ const ORIGIN = 'http://127.0.0.1:4175';
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
 const CALLBACK = 'https://assistant.example.test/callback';
 
-test.skip(!process.env.TEST_DATABASE_URL, 'needs TEST_DATABASE_URL (PostgreSQL)');
+test.skip(!process.env.TEST_DATABASE_URL || !process.env.JOURNEY_STATE, 'needs TEST_DATABASE_URL (PostgreSQL)');
 
 test('save a key, connect an assistant, run a program, sign out', async ({ page, context }) => {
-  const state = JSON.parse(readFileSync(process.env.JOURNEY_STATE ?? join(tmpdir(), 'uspto-journey-state.json'), 'utf8')) as {
+  const state = JSON.parse(readFileSync(process.env.JOURNEY_STATE!, 'utf8')) as {
     cookies: { name: string; value: string }[];
   };
   await context.addCookies(state.cookies.map((c) => ({ ...c, url: ORIGIN })));

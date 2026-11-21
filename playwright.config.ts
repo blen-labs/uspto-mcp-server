@@ -1,4 +1,14 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
+
+// The journey server hands the browser its signed-in session cookies through this file. It lives
+// in a fresh private directory (mode 0700), never at a predictable path in the shared temp dir;
+// the web server and the test workers inherit the variable.
+if (process.env.TEST_DATABASE_URL && !process.env.JOURNEY_STATE) {
+  process.env.JOURNEY_STATE = join(mkdtempSync(join(tmpdir(), 'uspto-journey-')), 'state.json');
+}
 
 // Browser tests of the portal (web/) and the documentation site (site/). `pnpm test:web` builds
 // both, serves dist/web with Vite's preview server (client-side routes fall back to index.html)

@@ -9,8 +9,6 @@
 import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import { writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { Pool } from 'pg';
 import { testUtils } from 'better-auth/plugins';
 import { MockAgent } from 'undici';
@@ -24,8 +22,9 @@ import { supervisorCfg } from '../../test/helpers.js';
 
 const PORT = 4175;
 const database = process.env.TEST_DATABASE_URL;
-const statePath = process.env.JOURNEY_STATE ?? join(tmpdir(), 'uspto-journey-state.json');
+const statePath = process.env.JOURNEY_STATE;
 if (!database) throw new Error('TEST_DATABASE_URL is required for the browser journey');
+if (!statePath) throw new Error('JOURNEY_STATE (set by playwright.config.ts) is required for the browser journey');
 
 const schema = `uspto_journey_${randomBytes(6).toString('hex')}`;
 const admin = new Pool({ connectionString: database });
@@ -56,7 +55,8 @@ const service = await createAccountApp(config, store, accountDependencies(deps, 
 const helper = testUtils().init((await service.auth.$context) as unknown as Parameters<ReturnType<typeof testUtils>['init']>[0]).context.test;
 const user = await helper.saveUser(helper.createUser({ email: 'ada@example.test', emailVerified: true }));
 const { cookies } = await helper.login({ userId: user.id });
-writeFileSync(statePath, JSON.stringify({ origin, cookies: cookies.map((c: { name: string; value: string }) => ({ name: c.name, value: c.value })) }));
+// Owner-only, and never overwrite a file someone else placed there.
+writeFileSync(statePath, JSON.stringify({ origin, cookies: cookies.map((c: { name: string; value: string }) => ({ name: c.name, value: c.value })) }), { mode: 0o600, flag: 'wx' });
 
 const server = createServer(service.app);
 server.listen(PORT, '127.0.0.1', () => process.stderr.write(`journey server on ${origin}\n`));
