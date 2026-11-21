@@ -61,3 +61,9 @@ h3 {
 :root[data-theme='light'] .starlight-aside--note {
   background-color: var(--sl-color-gray-7);
 }
+
+/* The search button shows a keyboard shortcut (⌘K) that is not part of its accessible name
+   ("Search"), which WCAG 2.5.3 (label in name) does not allow. The shortcut still works. */
+button[data-open-modal] kbd {
+  display: none;
+}

@@ -13,7 +13,7 @@ import { base, description, llmsDetails, packageName, productName, repo, site, t
 
 
 // Astro adds `base` to its own assets and Starlight adds it to the sidebar, but neither touches
-// a link written inside a page. This adds it to root-absolute links in Markdown and in MDX
+// a link written inside a page. The same pass makes tables keyboard-scrollable. This adds it to root-absolute links in Markdown and in MDX
 // components, so pages can link to `/connect/` wherever the site is served.
 function rehypeBase() {
   const prefix = (value) =>
@@ -21,6 +21,11 @@ function rehypeBase() {
   const visit = (node) => {
     if (node.type === 'element' && node.tagName === 'a' && node.properties?.href !== undefined) {
       node.properties.href = prefix(node.properties.href);
+    }
+    // Starlight lets a wide table scroll sideways. A keyboard user can scroll it only if it can
+    // take focus (WCAG 2.1.1), so it joins the tab order.
+    if (node.type === 'element' && node.tagName === 'table') {
+      node.properties = { ...node.properties, tabIndex: 0 };
     }
     if (node.type === 'mdxJsxFlowElement' || node.type === 'mdxJsxTextElement') {
       for (const attribute of node.attributes ?? []) {
