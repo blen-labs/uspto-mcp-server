@@ -22,3 +22,7 @@ release-notes.generated.md
 
 # Private keys (e.g. GitHub App .pem downloads) never belong in the repo
 *.pem
+
+# Playwright
+test-results/
+playwright-report/

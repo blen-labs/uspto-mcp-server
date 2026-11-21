@@ -377,7 +377,7 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
   // Needs the Vite bundle: `pnpm build` (CI builds before testing). Skipped, not failed, without it.
   const webBuilt = existsSync(new URL('../dist/web/index.html', import.meta.url));
   it.skipIf(!webBuilt)('serves the SAM.gov-style frontend and policies with same-origin assets (needs pnpm build)', async () => {
-    for (const path of ['/', '/sign-in', '/account', '/connect', '/consent', '/privacy-policy', '/terms']) {
+    for (const path of ['/', '/sign-in', '/account', '/connect', '/consent', '/privacy-policy', '/terms', '/error']) {
       const page = await fetch(`${config.origin}${path}`);
       expect(page.status).toBe(200);
       expect(page.headers.get('content-security-policy')).toContain("script-src 'self'");
@@ -392,6 +392,21 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
       }
     }
     expect(await (await fetch(`${config.origin}/api/portal/config`)).json()).toMatchObject({ google: true, email: false });
+    // An unknown path: a browser navigation gets the portal's not-found page with status 404;
+    // an API client keeps the short text answer.
+    // fetch() always sends `sec-fetch-mode: cors`, so send a browser navigation with node:http.
+    const { port } = new URL(config.origin);
+    const page = await new Promise<{ status?: number; type?: string; body: string }>((resolve, reject) =>
+      httpGet({ host: '127.0.0.1', port, path: '/no-such-page', headers: { host: new URL(config.origin).host, 'sec-fetch-mode': 'navigate', accept: 'text/html' } }, (res) => {
+        let body = '';
+        res.setEncoding('utf8').on('data', (chunk: string) => (body += chunk)).on('end', () => resolve({ status: res.statusCode, type: res.headers['content-type'], body }));
+      }).on('error', reject));
+    expect(page.status).toBe(404);
+    expect(page.type).toContain('text/html');
+    expect(page.body).toContain('/assets/');
+    const api = await fetch(`${config.origin}/no-such-page`, { headers: { accept: 'application/json' } });
+    expect(api.status).toBe(404);
+    expect(await api.text()).toBe('Not found');
   });
   // OAuth 2.0 lets a client with one registered URI omit redirect_uri. Better Auth refuses that, so
   // a signed Connect/Consent query always names one; the portal still answers 400, not 500, without it.
@@ -637,6 +652,14 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     expect((await send(browser, '/api/portal/keys', { apiKey: 'x'.repeat(9000) })).status).toBe(413);
     expect((await send(fetch, '/api/auth/oauth2/register', { redirect_uris: ['http://evil.example/cb'] })).status).toBe(400);
     const a = await token();
+    // A valid token does not let another site's page drive the signed-in endpoint.
+    const foreign = await fetch(`${config.origin}/mcp/account`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${a.access_token}`, origin: 'https://evil.example', 'content-type': 'application/json' },
+      body: '{}',
+    });
+    expect(foreign.status).toBe(403);
+    expect(await foreign.json()).toEqual({ error: 'origin_not_allowed' });
     await (await service.auth.$context).adapter.update({ model: 'user', where: [{ field: 'id', value: alice.id }], update: { emailVerified: false } });
     expect((await mcp(a.access_token)).status).toBe(401);
     await (await service.auth.$context).adapter.update({ model: 'user', where: [{ field: 'id', value: alice.id }], update: { emailVerified: true } });

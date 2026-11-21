@@ -65,6 +65,26 @@ type AccessTokenRow = {
   scopes?: string[] | string | null;
 };
 
+
+/** Client-side routes of the portal (web/src/main.tsx), served as index.html. */
+const PORTAL_ROUTES = ['/', '/sign-in', '/connect', '/consent', '/account', '/privacy-policy', '/terms', '/error'];
+const PORTAL_CSP =
+  "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
+
+/** A top-level page load in a browser (not fetch, not an API client). */
+function isNavigation(req: express.Request): boolean {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return false;
+  const mode = req.get('sec-fetch-mode');
+  if (mode) return mode === 'navigate';
+  return req.accepts(['json', 'html']) === 'html';
+}
+
+const TOO_MANY_PAGE = `<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Too many requests · Patents &amp; Trademarks MCP</title></head>
+<body><main><h1>Too many requests</h1><p>This address sent too many requests. Wait a minute, then <a href="/">try again</a>.</p></main></body>
+</html>
+`;
 export function allowedRedirect(value: unknown) {
   if (typeof value !== 'string') return false;
   try {
@@ -199,14 +219,22 @@ export async function createAccountApp(
   // Production reads the built page once; development rereads it so `pnpm dev:web` rebuilds show.
   const loadIndex = () => readFile(resolve(webRoot, 'index.html'), 'utf8').catch(() => undefined);
   let indexHtml: string | undefined;
-  app.get(['/', '/sign-in', '/connect', '/consent', '/account', '/privacy-policy', '/terms'], async (_req, res) => {
+  const sendPortal = async (res: express.Response, status = 200) => {
     const html = config.production ? (indexHtml ??= await loadIndex()) : await loadIndex();
     if (!html) return res.status(503).send('The web interface is not built. Run pnpm build.');
-    res.set('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
-      .type('html').send(html);
+    res.status(status).set('Content-Security-Policy', PORTAL_CSP).type('html').send(html);
+  };
+  app.get(PORTAL_ROUTES, async (_req, res) => {
+    await sendPortal(res);
   });
-  const tooMany = (res: express.Response) =>
-    res.status(429).set('Retry-After', '60').send('Too many requests');
+  const tooMany = (res: express.Response) => {
+    res.status(429).set('Retry-After', '60');
+    // A person in a browser gets a page; API clients get the short text they always did.
+    if (isNavigation(res.req)) {
+      return res.set('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'; base-uri 'none'").type('html').send(TOO_MANY_PAGE);
+    }
+    return res.send('Too many requests');
+  };
   app.use(async (req, res, next) => {
     // Hosted connectors (ChatGPT, Claude) send every user's OAuth and MCP traffic from a few
     // shared egress IPs, so those endpoints are limited elsewhere: Better Auth limits each OAuth
@@ -243,6 +271,11 @@ export async function createAccountApp(
   // No body parser: the SDK reads the body (capped at MAX_REQUEST_BODY_BYTES, as in the base
   // transport) only after the token checks below pass.
   app.all(ACCOUNT_MCP_PATH, async (req, res) => {
+    // MCP's Origin rule applies here too: a valid token must not let another site's page in the
+    // user's browser drive this endpoint. Checked before any token work.
+    const origin = req.headers.origin;
+    if (typeof origin === 'string' && !originAllowed(origin, config.origin, config.allowedOrigins ?? []))
+      return res.status(403).json({ error: 'origin_not_allowed' });
     const challenge = (status: number, error: string) =>
       res
         .status(status)
@@ -419,7 +452,12 @@ export async function createAccountApp(
     },
   );
   installPortal(app, config, store, auth, fetcher, ipOf);
-  app.use((_req, res) => res.status(404).send('Not found'));
+  // Unknown paths: a person in a browser gets the portal's own not-found page (status 404);
+  // API clients get the short text they always did.
+  app.use(async (req, res) => {
+    if (isNavigation(req)) return sendPortal(res, 404);
+    res.status(404).send('Not found');
+  });
   app.use(
     (error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       if (
