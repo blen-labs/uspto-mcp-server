@@ -40,15 +40,19 @@ to do before sending anything non-trivial, and we'll figure it out together.
 ```bash
 pnpm install
 pnpm test                       # vitest, ~15 s; no keys or network needed
-pnpm typecheck                  # tsc --noEmit (src, test, web)
-pnpm lint                       # eslint
+pnpm typecheck                  # tsc --noEmit (src, test, web, web/e2e)
+pnpm lint                       # eslint: correctness and security rules, type-aware in src/
+pnpm test:web                   # Playwright + axe: portal and docs accessibility (builds both first)
+pnpm kit:check                  # the shared portal kit matches web/portal-kit.json
 pnpm dev                        # tsx src/bin.ts (stdio)
 pnpm dev --http --insecure      # local HTTP, no auth, bound to 127.0.0.1
 pnpm build                      # tsc + Vite (dist/web) + chmod
 USPTO_LIVE=1 pnpm test:live     # opt-in: every corpus example against the real USPTO APIs
 ```
 
-Node 24 or 26 is required. TypeScript 7 runs side by side with the TS 6 API that
+Node 24 or 26 and pnpm 12 (pinned in `package.json`) are required. `pnpm test:web` needs
+Chromium once: `pnpm exec playwright install chromium`; with `TEST_DATABASE_URL` set it also
+runs the signed-in journey against a real server (needs Deno). TypeScript 7 runs side by side with the TS 6 API that
 tooling (typescript-eslint) needs — see the TS 7 notes in `CLAUDE.md`.
 
 Account-mode tests (`test/accounts.spec.ts`) need Deno and a disposable
@@ -58,6 +62,13 @@ missing runners or a missing database fail instead of skip. Live checks need you
 own `USPTO_API_KEY` / `USPTO_TSDR_API_KEY` (keep them in a gitignored `.env`; the
 live suite is read-only, sequential and small, and never runs in PR CI). Never
 commit keys.
+
+The portal (`web/`) targets WCAG 2.2 AA and Section 508; see
+[docs/accessibility.md](docs/accessibility.md) for what is tested automatically and the manual
+checks. Its layout, landing page and UI primitives (`web/src/components/kit`, `components/ui`,
+`index.css`) are a kit shared byte for byte with BLEN's other MCP servers: product text goes in
+`web/src/brand.tsx`, and after changing a kit file run `pnpm kit:update` and copy the files and
+`web/portal-kit.json` to the other servers.
 
 The documentation site is in `site/` (Astro Starlight). The Docker image builds it and the
 hosted server serves it at `/docs` (`src/accounts/docs.ts`), so it deploys with the server;
@@ -72,6 +83,7 @@ pnpm build    # builds, validates the internal links, and checks the connect but
 pnpm og       # renders public/og.png, the picture shown with a shared link
 ```
 
+Everything product-specific about the site is in `site/product.mjs`.
 Its SDK reference page is `docs/sdk-reference.md`, copied in at build time, and its
 recipes are the files in `examples/`. Edit those sources, not the site.
 

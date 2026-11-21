@@ -97,6 +97,19 @@ jobs:
     # checks (web/e2e). Manual checks are in docs/accessibility.md.
     name: accessibility (portal + docs)
     runs-on: ubuntu-latest
+    # The signed-in journey (web/e2e/journey.spec.ts) runs the real account server.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: uspto-ci
+          POSTGRES_DB: uspto_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://postgres:uspto-ci@localhost:5432/uspto_test
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -112,6 +125,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm install --frozen-lockfile
         working-directory: site
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: v2.9.8
       # The browser version is pinned by @playwright/test in the lockfile.
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:web

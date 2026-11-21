@@ -15,6 +15,7 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  // journey.spec.ts runs against a real account server; it needs PostgreSQL and Deno.
   webServer: [
     {
       command: 'pnpm exec vite preview --config web/vite.config.ts --host 127.0.0.1 --port 4173 --strictPort',
@@ -26,5 +27,15 @@ export default defineConfig({
       url: 'http://127.0.0.1:4174/docs/',
       reuseExistingServer: !process.env.CI,
     },
+    ...(process.env.TEST_DATABASE_URL
+      ? [
+          {
+            command: 'pnpm exec tsx web/e2e/journey-server.ts',
+            url: 'http://127.0.0.1:4175/health',
+            reuseExistingServer: false,
+            stderr: 'pipe' as const,
+          },
+        ]
+      : []),
   ],
 });
