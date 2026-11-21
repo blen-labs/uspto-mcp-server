@@ -106,8 +106,11 @@ test.describe('behaviour', () => {
     await open(page, `/sign-in?${OAUTH_QUERY}&error=access_denied`, undefined, /sign in to connect/i);
     await expect(page.getByRole('alert')).toHaveText('Sign-in was cancelled.');
     // An unknown code never echoes the URL's text.
-    await open(page, '/sign-in?error=%3Cscript%3E', undefined, /your account/i);
-    await expect(page.getByRole('alert')).toHaveText('Something went wrong. Start again.');
+    for (const code of ['%3Cscript%3E', '__proto__', 'constructor']) {
+      await open(page, `/sign-in?error=${code}`, undefined, /your account/i);
+      await expect(page.getByRole('alert')).toHaveText('Something went wrong. Start again.');
+    }
+    await open(page, '/error?error=__proto__', undefined, /something went wrong/i);
   });
 
   test('copying a connector URL is announced', async ({ page, context }) => {

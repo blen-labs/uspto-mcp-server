@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import starlightLinksValidator from 'starlight-links-validator';
 import starlightLlmsTxt from 'starlight-llms-txt';
 import { groups, pages } from './src/lib/pages.mjs';
-import { base, description, llmsDetails, packageName, productName, repo, site, tagline } from './product.mjs';
+import { base, description, distribution, llmsDetails, packageName, productName, repo, site, tagline } from './product.mjs';
 
 // The hosted server serves the built site at /docs (deploy/Dockerfile builds it into the image;
 // src/accounts/docs.ts serves it). To move it, change `site` and `base` here and the base in the
@@ -136,11 +136,9 @@ export default defineConfig({
           minify: { note: false, tip: false, details: false, whitespace: false },
           optionalLinks: [
             { label: 'Source code', url: repo, description: 'the server, its tests, and the long guides' },
-            {
-              label: 'npm package',
-              url: `https://www.npmjs.com/package/${packageName}`,
-              description: 'the published server',
-            },
+            ...(distribution.npm
+              ? [{ label: 'npm package', url: `https://www.npmjs.com/package/${packageName}`, description: 'the published server' }]
+              : []),
           ],
         }),
       ],

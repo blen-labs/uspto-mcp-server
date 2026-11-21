@@ -2,7 +2,7 @@ import { Notice } from '@/components/kit/notice';
 import { Shell } from '@/components/kit/shell';
 
 /** Messages for the error codes the sign-in and OAuth flows redirect here with. */
-const MESSAGES: Record<string, string> = {
+const MESSAGES = new Map<string, string>(Object.entries({
   access_denied: 'Sign-in was cancelled.',
   state_mismatch: 'The sign-in link expired or was opened in another browser. Start again.',
   please_restart_the_process: 'The sign-in link expired. Start again.',
@@ -10,11 +10,12 @@ const MESSAGES: Record<string, string> = {
   invalid_client: 'Your AI assistant is not registered with this server. Reconnect it.',
   unable_to_create_user: 'Your account could not be created. Try again later.',
   internal_server_error: 'Something went wrong on our side. Try again later.',
-};
+}));
 
 /** A fixed message for an error code from the URL (never the code's own text). */
 export function errorMessage(code: string): string {
-  return MESSAGES[code.toLowerCase()] ?? 'Something went wrong. Start again.';
+  // A Map, so a code like `__proto__` or `constructor` can never reach an inherited property.
+  return MESSAGES.get(code.toLowerCase()) ?? 'Something went wrong. Start again.';
 }
 
 /** Where Better Auth and the portal send people when sign-in or a connection fails. */
