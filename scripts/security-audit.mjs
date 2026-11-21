@@ -27,7 +27,8 @@ import { join, resolve } from 'node:path';
 const FAILING_SEVERITIES = new Set(['moderate', 'high', 'critical']);
 const COPIED_FILES = ['package.json', 'pnpm-lock.yaml', '.pnpmfile.cjs', '.npmrc'];
 
-// pnpm's JSON `error.code` values that mean the registry or network failed, not this repository.
+// pnpm error codes (JSON `error.code`, or the `Error: <code>` line pnpm 12 prints on stderr) that
+// mean the registry or network failed, not this repository.
 const SERVICE_ERROR = /^(ECONN|ETIMEDOUT|ESOCKETTIMEDOUT|ENOTFOUND|EAI_AGAIN|EHOSTUNREACH|ENETUNREACH|EPIPE|UND_ERR|ERR_PNPM_AUDIT_BAD_RESPONSE|ERR_PNPM_FETCH|ERR_PNPM_META_FETCH)/;
 
 export class AuditUnavailable extends Error {}
@@ -123,7 +124,12 @@ function audit(dir) {
   try {
     report = JSON.parse(r.stdout);
   } catch {
-    throw new Error(`pnpm audit gave no report in ${dir}: ${(r.stderr || r.stdout || '').trim().slice(0, 500)}`);
+    // pnpm 12 reports a failed audit on stderr as `Error: ERR_PNPM_...` followed by prose, not as
+    // a JSON `error` object, so classify it by that code.
+    const detail = (r.stderr || r.stdout || '').trim();
+    const message = `pnpm audit gave no report in ${dir}: ${detail.slice(0, 500)}`;
+    const code = /^Error: (\S+)/m.exec(detail)?.[1];
+    throw isServiceError({ code }) ? new AuditUnavailable(message) : new Error(message);
   }
   if (report.error || !report.metadata) {
     const message = `pnpm audit failed in ${dir}: ${JSON.stringify(report.error ?? report).slice(0, 500)}`;

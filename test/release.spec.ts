@@ -133,7 +133,7 @@ describe('changedManifestFields', () => {
     optionalDependencies: { 'isolated-vm': '^7.0.2' },
     devDependencies: { vitest: '^4.0.0' },
     engines: { node: '^24.11.0 || ^26.0.0' },
-    packageManager: 'pnpm@10.33.0',
+    packageManager: 'pnpm@12.21.0',
     scripts: { build: 'tsc', test: 'vitest run' },
   };
   const edit = (f: (p: Record<string, any>) => void) => { const p = structuredClone(base) as Record<string, any>; f(p); return p; };
@@ -142,7 +142,7 @@ describe('changedManifestFields', () => {
     expect(changedManifestFields(base, edit(p => {
       p.version = '1.0.1';
       p.devDependencies.vitest = '^4.1.0';
-      p.packageManager = 'pnpm@10.34.0';
+      p.packageManager = 'pnpm@12.22.0';
       p.scripts.test = 'vitest run --reporter dot';
       p.scripts.lint = 'eslint .';
       p.scripts['test:live'] = 'vitest run test/live.spec.ts --bail 1';
@@ -347,13 +347,15 @@ describe('release.mjs against disposable repositories', () => {
 
   it('a range that cannot change the package releases nothing and stamps nothing', async () => {
     const { outputs, untouched, log } = await run(true, [
-      { subject: 'build(deps-dev): bump vitest in the dev-tooling group', files: { 'pnpm-lock.yaml': 'lock\n' }, pkg: p => { p.devDependencies.vitest = '^99.0.0'; } },
+      // A real lockfile that changed without changing the production tree (pnpm 12 refuses to
+      // read a malformed one, which would count as a change).
+      { subject: 'build(deps-dev): bump vitest in the dev-tooling group', lock: text => `${text}# dev-tooling bump\n`, pkg: p => { p.devDependencies.vitest = '^99.0.0'; } },
       { subject: 'build(deps): bump node in /deploy', files: { 'deploy/Dockerfile': 'FROM node:99\n' } },
       { subject: 'ci(deps): bump actions/checkout in the actions group', files: { '.github/workflows/ci.yml': 'on: push\n' } },
       { subject: 'build(deps): bump astro in /site in the site group', files: { 'site/package.json': '{}\n' } },
       { subject: 'docs: readme', files: { 'README.md': 'readme\n' } },
       { subject: 'test: add a case', files: { 'test/a.spec.ts': 'x\n' } },
-    ]);
+    ], {}, { lockfile: true });
     expect(outputs).toEqual({ released: 'false' });
     expect(untouched).toBe(true);
     expect(log).toContain('nothing to release');

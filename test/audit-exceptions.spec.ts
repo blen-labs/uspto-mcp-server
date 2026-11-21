@@ -131,7 +131,8 @@ describe('security-audit', () => {
     const script = join(process.cwd(), 'scripts/security-audit.mjs');
     // No lockfile: a person has to act, so 1 (not 2, which would retry and open no issue).
     withWorkspace('overrides: {}\n', dir => {
-      const env = { ...process.env, npm_config_registry: 'http://127.0.0.1:9/', npm_config_fetch_retries: '0' };
+      // pnpm 11+ reads only pnpm_config_* (npm_config_* is ignored).
+      const env = { ...process.env, pnpm_config_registry: 'http://127.0.0.1:9/', pnpm_config_fetch_retries: '0' };
       expect(spawnSync('node', [script, dir], { encoding: 'utf8', env }).status).toBe(1);
       // The repository root against an unreachable registry is an outage on its own (2) ...
       expect(spawnSync('node', [script, '.'], { encoding: 'utf8', env }).status).toBe(2);
