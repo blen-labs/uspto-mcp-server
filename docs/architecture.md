@@ -388,6 +388,6 @@ scripts/
 web/                       # React account / connect / consent pages (account mode)
 test/                      # vitest specs (live.spec.ts is opt-in)
 examples/                  # snippets you can paste into `execute`
-deploy/                    # Dockerfile, railway.toml, RAILWAY.md
+deploy/                    # Dockerfile, RAILWAY.md (Railway config: .railway/railway.ts)
 docs/                      # this file, sdk-reference.md, accounts.md
 ```

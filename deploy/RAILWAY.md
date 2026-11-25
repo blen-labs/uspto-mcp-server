@@ -1,6 +1,6 @@
 # Deploying to Railway
 
-The included `deploy/Dockerfile` and `deploy/railway.toml` produce a single-process
+The included `deploy/Dockerfile` and the Railway service declared in `.railway/railway.ts` produce a single-process
 HTTP MCP server on Node 26 (LTS) with Deno 2.9.8 included. Authenticated HTTP serving runs
 user code only in the Deno sandbox (a separate permissionless process per
 execution), so the image has everything `execute` needs.
@@ -17,7 +17,9 @@ execution), so the image has everything `execute` needs.
    set **Settings → Source → Root Directory** to that subdirectory. All paths
    below are relative to that root.
 3. In **Settings → Build**, set the **Dockerfile path** to `deploy/Dockerfile`.
-   (Or copy `deploy/railway.toml` to the root and Railway will pick it up.)
+   (Or apply `.railway/railway.ts` with `railway config apply`; it is the single source of
+   Railway settings and already sets this. Its source repository, domain and region are BLEN's
+   production values: change them first, or set the equivalents in the service settings.)
 4. Railway will inject `PORT`. Our server binds to it automatically.
 5. Attach your custom domain (e.g. **`your-host.example.com`**) in **Settings →
    Networking → Custom Domains**, then add the `CNAME` Railway gives you to
@@ -75,13 +77,13 @@ Never deploy with `--insecure`: it disables authentication.
 
 **Run one instance.** The per-key queues, hourly buckets (outside account mode) and quotas
 are in memory, so a second replica could send concurrent requests with one key and draw `429`s
-from USPTO. `deploy/railway.toml` sets `numReplicas = 1`.
+from USPTO. `.railway/railway.ts` sets one replica (`replicas: { 'us-east4-eqdc4a': 1 }`).
 
 **Deploys briefly overlap, and that is handled.** Railway activates the new deployment before it
 sends `SIGTERM` to the old one ([deployment teardown](https://docs.railway.com/deployments/deployment-teardown));
-it cannot stop the old deployment first. `railway.toml` keeps that window as short as Railway
-allows (`overlapSeconds = 0`), and on `SIGTERM` the old process immediately cancels its running
-executions and in-flight USPTO calls (`drainingSeconds = 15` is ample). If both processes still
+it cannot stop the old deployment first. `.railway/railway.ts` keeps that window as short as Railway
+allows (`overlapSeconds: 0`), and on `SIGTERM` the old process immediately cancels its running
+executions and in-flight USPTO calls (`drainingSeconds: 15` is ample). If both processes still
 send a request with the same key in that moment, USPTO answers `429`: the server then pauses that
 key for at least 5 seconds (or `Retry-After`) and retries once. Usually callers see only a short
 delay, but this is a residual risk, not a guarantee: a second `429` or a long `Retry-After` surfaces
