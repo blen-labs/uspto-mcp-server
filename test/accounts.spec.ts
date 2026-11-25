@@ -924,11 +924,11 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     // A harmless repeat of the same value is still locked on.
     const repeated = await token();
     expect((await holding(user, () => oauthPost('token', `${form({ client_id: repeated.clientId, grant_type: 'refresh_token', refresh_token: repeated.refresh_token })}&refresh_token=${repeated.refresh_token}`))).waits).toBe(true);
-    // A UTF-8 BOM is stripped before the lock is chosen. Better Auth honours it ahead of client_id
-    // (200) but not ahead of grant_type (400); locking in both cases can only over-serialize.
+    // The lock is chosen with the parser Better Auth uses, so a BOM is handled exactly as it handles it.
     const bomRefresh = ((await (await waitsAndSucceeds(user, () => oauthPost('token', `\uFEFF${form({ client_id: third.clientId, grant_type: 'refresh_token', refresh_token: refreshed.refresh_token })}`), 'BOM-prefixed refresh grant')).json()) as any).refresh_token as string;
     const bomFirst = await holding(user, () => oauthPost('token', `\uFEFF${form({ grant_type: 'refresh_token', client_id: third.clientId, refresh_token: bomRefresh })}`));
-    expect(bomFirst.waits).toBe(true);
+    // Whatever this runtime's parser does with the BOM, an accepted request never runs unlocked.
+    expect(bomFirst.response.status === 200 ? bomFirst.waits : true).toBe(true);
     expect(bomFirst.response.status).toBeLessThan(500);
     // A code exchange locks on its code, never on a stray refresh_token.
     const flow = await authorize();
@@ -954,6 +954,40 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     // The refresh token the decoys never touched still works.
     expect((await exchange(client, { grant_type: 'refresh_token', refresh_token: fourth.refresh_token })).status).toBe(200);
   });
+  it('every accepted refresh, revoke and code exchange takes its lock, including leading-? bodies', async () => {
+    const user = advisoryId(`user:${alice.id}`);
+    // Whether this runtime's form parser keeps or drops a leading '?', a request Better Auth accepts
+    // must have waited for the lock it was chosen with: never 200 without waiting.
+    const accepted = async (label: string, id: string, run: () => Promise<Response>) => {
+      const { waits, response } = await holding(id, run);
+      expect(response.status, label).toBeLessThan(500);
+      if (response.status === 200) expect(waits, `${label} ran without its lock`).toBe(true);
+      return response.status;
+    };
+    let ran = 0;
+    for (const variant of [
+      (c: string, r: string) => `?${form({ grant_type: 'refresh_token', refresh_token: r, client_id: c })}`,
+      (c: string, r: string) => `?${form({ refresh_token: r, grant_type: 'refresh_token', client_id: c })}`,
+      (c: string, r: string) => `?a=1&${form({ grant_type: 'refresh_token', refresh_token: r, client_id: c })}`,
+      (c: string, r: string) => form({ grant_type: 'refresh_token', refresh_token: r, client_id: c }),
+    ]) {
+      const t = await token();
+      if (await accepted(`refresh ${variant('C', 'R')}`, user, () => oauthPost('token', variant(t.clientId, t.refresh_token))) === 200) ran++;
+    }
+    for (const variant of [
+      (c: string, r: string) => `?${form({ token: `Bearer ${r}`, client_id: c })}`,
+      (c: string, r: string) => `?${form({ token: r, client_id: c })}`,
+      (c: string, r: string) => form({ token: r, client_id: c }),
+    ]) {
+      const t = await token();
+      if (await accepted(`revoke ${variant('C', 'R')}`, user, () => oauthPost('revoke', variant(t.clientId, t.refresh_token))) === 200) ran++;
+    }
+    const flow = await authorize();
+    const fields = { code: flow.code!, grant_type: 'authorization_code', code_verifier: flow.verifier, redirect_uri: flow.client.redirect_uris[0], client_id: flow.client.client_id };
+    if (await accepted('code exchange with leading ?', advisoryId(`code:${flow.code}`), () => oauthPost('token', `?${form(fields)}`)) === 200) ran++;
+    // The unprefixed forms are accepted on every runtime, so at least those ran under their lock.
+    expect(ran).toBeGreaterThanOrEqual(2);
+  });
   it('refuses conflicting repeats of the grant or the chosen field, before any lock or Better Auth', async () => {
     const a = await token();
     const user = advisoryId(`user:${alice.id}`);
@@ -976,26 +1010,21 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     // The token survived all of those.
     expect((await exchange(a.clientId, { grant_type: 'refresh_token', refresh_token: a.refresh_token })).status).toBe(200);
   });
-  it('parses lock targets the way Better Auth reads token and revoke bodies', () => {
+  it('parses lock targets the way Better Auth reads token and revoke bodies', async () => {
     const f = 'application/x-www-form-urlencoded';
     const body = (s: string) => Buffer.from(s);
-    expect(lockTarget('/oauth2/token', f, body('grant_type=refresh_token&refresh_token=R&token=T&code=C'))).toEqual({ token: 'R' });
-    expect(lockTarget('/oauth2/token', `${f}; charset=UTF-8`, body('grant_type=%20authorization_code%20&code=C&refresh_token=R'))).toEqual({ code: 'C' });
-    expect(lockTarget('/oauth2/token', f.toUpperCase(), body('grant_type=refresh_token&refresh_token=R'))).toEqual({ token: 'R' });
-    expect(lockTarget('/oauth2/revoke', f, body('refresh_token=R&token=Bearer%20T&grant_type=refresh_token'))).toEqual({ token: 'T' });
-    expect(lockTarget('/oauth2/token', f, body('﻿grant_type=refresh_token&refresh_token=R'))).toEqual({ token: 'R' });
-    expect(lockTarget('/oauth2/token', f, body('refresh_token=R&grant_type=refresh_token&refresh_token=R'))).toEqual({ token: 'R' });
-    expect(lockTarget('/oauth2/token', f, body('grant_type=refresh_token&refresh_token=R&refresh_token=S'))).toEqual({ ambiguous: true });
-    expect(lockTarget('/oauth2/token', f, body('grant_type=refresh_token&grant_type=authorization_code'))).toEqual({ ambiguous: true });
-    expect(lockTarget('/oauth2/revoke', f, body('token=a&token=b'))).toEqual({ ambiguous: true });
+    expect(await lockTarget('/oauth2/token', f, body('grant_type=refresh_token&refresh_token=R&token=T&code=C'))).toEqual({ token: 'R' });
+    expect(await lockTarget('/oauth2/token', `${f}; charset=UTF-8`, body('grant_type=%20authorization_code%20&code=C&refresh_token=R'))).toEqual({ code: 'C' });
+    expect(await lockTarget('/oauth2/token', f.toUpperCase(), body('grant_type=refresh_token&refresh_token=R'))).toEqual({ token: 'R' });
+    expect(await lockTarget('/oauth2/revoke', f, body('refresh_token=R&token=Bearer%20T&grant_type=refresh_token'))).toEqual({ token: 'T' });
+    expect(await lockTarget('/oauth2/token', f, body('refresh_token=R&grant_type=refresh_token&refresh_token=R'))).toEqual({ token: 'R' });
+    expect(await lockTarget('/oauth2/token', f, body('grant_type=refresh_token&refresh_token=R&refresh_token=S'))).toEqual({ ambiguous: true });
+    expect(await lockTarget('/oauth2/token', f, body('grant_type=refresh_token&grant_type=authorization_code'))).toEqual({ ambiguous: true });
+    expect(await lockTarget('/oauth2/revoke', f, body('token=a&token=b'))).toEqual({ ambiguous: true });
     // grant_type repeats are compared after trimming, as Better Auth trims before dispatching.
-    expect(lockTarget('/oauth2/token', f, body('grant_type=refresh_token&grant_type=%20refresh_token%20&refresh_token=R'))).toEqual({ token: 'R' });
-    // A leading '?' stays part of the first key, as Better Auth's parser keeps it.
-    expect(lockTarget('/oauth2/revoke', f, body('?token=R'))).toBeUndefined();
-    expect(lockTarget('/oauth2/revoke', f, body('?a=1&token=R'))).toEqual({ token: 'R' });
-    expect(lockTarget('/oauth2/token', f, body('?grant_type=refresh_token&refresh_token=R'))).toBeUndefined();
-    expect(lockTarget('/oauth2/token', f, body('grant_type=refresh_token&?refresh_token=R'))).toBeUndefined();
-    for (const none of [
+    expect(await lockTarget('/oauth2/token', f, body('grant_type=refresh_token&grant_type=%20refresh_token%20&refresh_token=R'))).toEqual({ token: 'R' });
+    expect(await lockTarget('/oauth2/token', f, body('grant_type=refresh_token&?refresh_token=R'))).toBeUndefined();
+    for (const none of await Promise.all([
       lockTarget('/oauth2/token', f, body('grant_type=client_credentials&refresh_token=R&code=C')),
       lockTarget('/oauth2/token', f, body('refresh_token=R')),
       lockTarget('/oauth2/token', f, body('grant_type=refresh_token')),
@@ -1006,7 +1035,7 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
       lockTarget('/oauth2/token', 'application/json', body('{"grant_type":"refresh_token","refresh_token":"R"}')),
       lockTarget('/oauth2/token', undefined, body('grant_type=refresh_token&refresh_token=R')),
       lockTarget('/oauth2/token', f, undefined),
-    ]) expect(none).toBeUndefined();
+    ])) expect(none).toBeUndefined();
   });
   it('serializes concurrent refreshes of one grant: exactly one wins', async () => {
     const a = await token();

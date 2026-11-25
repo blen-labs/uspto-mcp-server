@@ -44,32 +44,33 @@ const FORM_MEDIA_TYPE = 'application/x-www-form-urlencoded';
 /** What a /oauth2/token or /oauth2/revoke body asks to lock on, as Better Auth will read it. */
 export type LockTarget = { token: string } | { code: string } | { ambiguous: true } | undefined;
 /**
- * Reads the body the way Better Auth does (it accepts only form-encoded bodies on these two
- * endpoints, keeps the last of a repeated field and decodes UTF-8 without a BOM) and names what
- * the operation it will run is about: revoke acts on `token`; a refresh grant on `refresh_token`;
- * a code exchange on `code`. Fields that operation ignores never choose the lock. A repeated
- * `grant_type` or chosen field with differing values is ambiguous (the caller answers 400);
- * repeats of one value are harmless. Anything else (another media type, client_credentials, a
- * missing or unknown grant, an empty value) is refused or changes nothing downstream, so it
- * takes no lock.
+ * Reads the body with the runtime parser Better Auth itself uses (`Request.formData()`, so quirks
+ * such as a leading '?' or a BOM are whatever this Node does) and names what the operation it
+ * will run is about: revoke acts on `token`; a refresh grant on `refresh_token`; a code exchange
+ * on `code`. Fields that operation ignores never choose the lock. A repeated `grant_type` (after
+ * trimming, as Better Auth trims before dispatching) or chosen field with differing values is
+ * ambiguous, and so is a body the parser rejects; the caller answers 400 for both. Anything else
+ * (another media type, client_credentials, a missing or unknown grant, an empty value) is refused
+ * or changes nothing downstream, so it takes no lock.
  */
-export function lockTarget(path: string, contentType: string | undefined, body: Buffer | undefined): LockTarget {
+export async function lockTarget(path: string, contentType: string | undefined, body: Buffer | undefined): Promise<LockTarget> {
   if ((contentType ?? '').toLowerCase().split(';')[0]!.trim() !== FORM_MEDIA_TYPE || !body) return undefined;
-  // The leading '&' keeps URLSearchParams from dropping a leading '?', which Better Auth's parser
-  // keeps in the first key (`?token=R` is a field named "?token", so it locks on nothing).
-  const params = new URLSearchParams('&' + body.toString('utf8').replace(/^\uFEFF/, ''));
+  let form: FormData;
+  try {
+    form = await new Request('http://localhost/', { method: 'POST', headers: { 'content-type': contentType! }, body }).formData();
+  } catch { return { ambiguous: true }; }
   // The last value is what Better Auth uses; differing repeats are refused rather than guessed at.
-  // grant_type is trimmed before it is compared, as Better Auth trims it before dispatching.
   const single = (name: string, trim = false) => {
-    const values = params.getAll(name).map(v => (trim ? v.trim() : v));
-    return new Set(values).size > 1 ? null : values.at(-1);
+    const values = form.getAll(name).map(v => (typeof v === 'string' && trim ? v.trim() : v));
+    if (new Set(values).size > 1) return null;
+    const last = values.at(-1);
+    return typeof last === 'string' ? last : undefined;
   };
   let name: 'token' | 'refresh_token' | 'code';
   if (path === '/oauth2/revoke') name = 'token';
   else {
     const raw = single('grant_type', true);
     if (raw === null) return { ambiguous: true };
-    // Better Auth trims grant_type before dispatching on it.
     const grant = raw?.trim();
     if (grant === 'refresh_token') name = 'refresh_token';
     else if (grant === 'authorization_code') name = 'code';
@@ -516,9 +517,9 @@ export async function createAccountApp(
       // A code exchange can still overlap a family wipe for the same user; at worst that new
       // authorization is revoked and the user authorizes again.
       if (!tokenRequests.allow(limitKey(req))) return tooMany(res);
-      const target = lockTarget(req.path, req.get('content-type'), Buffer.isBuffer(body) ? body : undefined);
+      const target = await lockTarget(req.path, req.get('content-type'), Buffer.isBuffer(body) ? body : undefined);
       if (target && 'ambiguous' in target)
-        return res.status(400).json({ error: 'invalid_request', error_description: 'A repeated field makes this request ambiguous.' });
+        return res.status(400).json({ error: 'invalid_request', error_description: 'The request body is ambiguous or cannot be parsed.' });
       const lockId = await tokenLockId(target);
       if (lockId === undefined) return execute();
       // Too busy to take the lock in time: the client should retry, not see a server fault.
