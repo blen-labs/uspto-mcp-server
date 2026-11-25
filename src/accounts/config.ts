@@ -12,6 +12,8 @@ export interface AccountConfig {
   subjectDailyQuota?: number;
   /** Header the reverse proxy overwrites with the client address (Railway: x-real-ip). */
   clientIpHeader?: string;
+  /** Connections per replica reserved for OAuth token locks (default 10); each waiting token request holds one. */
+  authLockPoolSize?: number;
   /** Per-IP token bucket for the anonymous /mcp endpoint (USPTO_IP_RPS / USPTO_IP_BURST). */
   ipRps?: number;
   ipBurst?: number;
@@ -52,9 +54,13 @@ export function loadAccountConfig(env: Record<string, string | undefined>): Acco
   if (!Number.isInteger(subjectDailyQuota) || subjectDailyQuota < 1) throw new Error('USPTO_SUBJECT_DAILY_QUOTA must be a positive integer');
   const clientIpHeader = env.USPTO_CLIENT_IP_HEADER?.trim().toLowerCase() || undefined;
   if (clientIpHeader && !/^[a-z0-9-]+$/.test(clientIpHeader)) throw new Error('USPTO_CLIENT_IP_HEADER must be a header name');
+  const lockPool = env.AUTH_LOCK_POOL_SIZE?.trim();
+  const authLockPoolSize = lockPool ? Number(lockPool) : undefined;
+  if (authLockPoolSize !== undefined && !(Number.isInteger(authLockPoolSize) && authLockPoolSize >= 2 && authLockPoolSize <= 200))
+    throw new Error('AUTH_LOCK_POOL_SIZE must be an integer from 2 to 200');
   const ipRps = Number(env.USPTO_IP_RPS ?? 5), ipBurst = Number(env.USPTO_IP_BURST ?? 20);
   return {
-    subjectDailyQuota, clientIpHeader,
+    subjectDailyQuota, clientIpHeader, authLockPoolSize,
     allowedOrigins: (env.USPTO_ALLOWED_ORIGINS ?? '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
     // Same rules as the base transport: rps > 0 and burst >= 1, else the defaults.
     ipRps: Number.isFinite(ipRps) && ipRps > 0 ? ipRps : 5,

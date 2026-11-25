@@ -198,6 +198,7 @@ The most common knobs (full list and defaults in [`.env.example`](./.env.example
 | `USPTO_ALLOWED_HOSTS` | — | Extra accepted `Host` values (comma-separated); `*` disables the check (unsafe). |
 | `USPTO_IP_RPS` / `USPTO_IP_BURST` | `5` / `20` | Per-IP token bucket on the HTTP transport. |
 | `USPTO_CLIENT_IP_HEADER` | unset | Header your proxy overwrites with the client address (Railway: `x-real-ip`). |
+| `AUTH_LOCK_POOL_SIZE` | `10` | Account mode: connections per replica reserved for OAuth token locks (2 to 200); see [accounts](docs/accounts.md). |
 | `USPTO_SUBJECT_DAILY_QUOTA` | `10000` | Requests per authenticated subject per UTC day. |
 
 CLI options: `--http`, `--port`, `--host`, `--sandbox auto|isolate|deno`, `--insecure`, `--help`.
