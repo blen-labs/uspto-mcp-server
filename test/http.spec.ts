@@ -492,3 +492,17 @@ describe('HttpClient absolute deadline', () => {
     }
   });
 });
+
+describe('address canonicalization is linear in input size', () => {
+  it('handles a huge zone id and a long digit run quickly, with mapped spellings intact', () => {
+    const t0 = performance.now();
+    bucketKey(`fe80::1%${'%'.repeat(100_000)}`);
+    bucketKey(`::ffff:1.2.3.${'9'.repeat(100_000)}`);
+    bucketKey(`2001:db8::${'9'.repeat(100_000)}`);
+    expect(performance.now() - t0).toBeLessThan(200);
+    expect(bucketKey('fe80::1%eth0')).toBe('fe80:0:0:0::/64');
+    expect(bucketKey('::ffff:203.0.113.5')).toBe('203.0.113.5');
+    expect(bucketKey('0:0:0:0:0:ffff:203.0.113.5')).toBe('203.0.113.5');
+    expect(bucketKey('2001:db8:1:2:0:0:203.0.113.5')).toBe('2001:db8:1:2::/64');
+  });
+});
