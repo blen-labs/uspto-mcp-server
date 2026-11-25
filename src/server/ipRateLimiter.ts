@@ -1,5 +1,5 @@
 import type { IncomingMessage } from 'node:http';
-import { isIP } from 'node:net';
+import { isIPv6 } from 'node:net';
 import { LRUCache } from 'lru-cache';
 
 /**
@@ -41,14 +41,6 @@ export class IpRateLimiter {
     return ok;
   }
 
-  /** Gives back a token that `allow(ip)` spent, for a request that turned out not to count. */
-  refund(ip: string): void {
-    const key = bucketKey(ip);
-    const b = this.refilled(key);
-    b.tokens = Math.min(this.burst, b.tokens + 1);
-    this.buckets.set(key, b);
-  }
-
   private refilled(ip: string): { tokens: number; updatedAt: number } {
     const now = Date.now();
     const b = this.buckets.get(ip) ?? { tokens: this.burst, updatedAt: now };
@@ -77,14 +69,30 @@ export function clientIp(req: IncomingMessage, trustedHeader?: string): string {
   return candidate ? normalize(candidate) : peer;
 }
 
-/** An IPv4-mapped IPv6 address (what a dual-stack socket reports) is the IPv4 client: dotted or hex form. */
-function normalize(ip: string): string {
-  const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(ip);
-  if (hex) {
-    const hi = parseInt(hex[1]!, 16), lo = parseInt(hex[2]!, 16);
-    return `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
+/** The 8 groups of an IPv6 address (a dotted IPv4 tail counts as two), or undefined if it is not one. */
+function ipv6Groups(ip: string): number[] | undefined {
+  if (!isIPv6(ip)) return undefined;
+  ip = ip.replace(/%.*$/, '');
+  const dotted = /(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(ip);
+  if (dotted) {
+    const [a, b, c, d] = dotted.slice(1).map(Number) as [number, number, number, number];
+    ip = `${ip.slice(0, dotted.index)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
   }
-  return ip.replace(/^::ffff:/i, '');
+  const [head = '', tail] = ip.split('::');
+  const first = head ? head.split(':') : [];
+  const rest = tail === undefined ? [] : tail ? tail.split(':') : [];
+  const missing = 8 - first.length - rest.length;
+  if (tail === undefined ? missing !== 0 : missing < 1) return undefined;
+  const groups = [...first, ...Array<string>(tail === undefined ? 0 : missing).fill('0'), ...rest].map(g => parseInt(g, 16));
+  return groups.length === 8 && groups.every(g => g >= 0 && g <= 0xffff) ? groups : undefined;
+}
+
+/** An IPv4-mapped address (::ffff:0:0/96, in any spelling) is the IPv4 client; anything else is returned as is. */
+function normalize(ip: string): string {
+  const g = ipv6Groups(ip);
+  if (g && g.slice(0, 5).every(x => x === 0) && g[5] === 0xffff)
+    return `${g[6]! >> 8}.${g[6]! & 255}.${g[7]! >> 8}.${g[7]! & 255}`;
+  return ip;
 }
 
 /**
@@ -94,14 +102,7 @@ function normalize(ip: string): string {
  */
 export function bucketKey(ip: string): string {
   ip = normalize(ip);
-  if (!ip.includes(':') || isIP(ip) !== 6) return ip;
-  const [head = '', tail] = ip.split('::');
-  const groups = head ? head.split(':') : [];
-  if (tail !== undefined) {
-    const rest = tail ? tail.split(':') : [];
-    while (groups.length + rest.length < 8) groups.push('0');
-    groups.push(...rest);
-  }
-  if (groups.length !== 8) return ip;
-  return `${groups.slice(0, 4).map(g => g.toLowerCase().replace(/^0+(?=.)/, '')).join(':')}::/64`;
+  const g = ipv6Groups(ip);
+  if (!g) return ip;
+  return `${g.slice(0, 4).map(x => x.toString(16)).join(':')}::/64`;
 }

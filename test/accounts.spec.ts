@@ -988,6 +988,13 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     expect(lockTarget('/oauth2/token', f, body('grant_type=refresh_token&refresh_token=R&refresh_token=S'))).toEqual({ ambiguous: true });
     expect(lockTarget('/oauth2/token', f, body('grant_type=refresh_token&grant_type=authorization_code'))).toEqual({ ambiguous: true });
     expect(lockTarget('/oauth2/revoke', f, body('token=a&token=b'))).toEqual({ ambiguous: true });
+    // grant_type repeats are compared after trimming, as Better Auth trims before dispatching.
+    expect(lockTarget('/oauth2/token', f, body('grant_type=refresh_token&grant_type=%20refresh_token%20&refresh_token=R'))).toEqual({ token: 'R' });
+    // A leading '?' stays part of the first key, as Better Auth's parser keeps it.
+    expect(lockTarget('/oauth2/revoke', f, body('?token=R'))).toBeUndefined();
+    expect(lockTarget('/oauth2/revoke', f, body('?a=1&token=R'))).toEqual({ token: 'R' });
+    expect(lockTarget('/oauth2/token', f, body('?grant_type=refresh_token&refresh_token=R'))).toBeUndefined();
+    expect(lockTarget('/oauth2/token', f, body('grant_type=refresh_token&?refresh_token=R'))).toBeUndefined();
     for (const none of [
       lockTarget('/oauth2/token', f, body('grant_type=client_credentials&refresh_token=R&code=C')),
       lockTarget('/oauth2/token', f, body('refresh_token=R')),

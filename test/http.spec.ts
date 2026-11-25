@@ -15,14 +15,6 @@ describe('IpRateLimiter', () => {
     expect(lim.allow('1.2.3.4')).toBe(true);
     expect(lim.allow('1.2.3.4')).toBe(false);
   });
-  it('refunds a spent token, up to burst', () => {
-    const lim = new IpRateLimiter(0, 1);
-    expect(lim.allow('1.2.3.4')).toBe(true);
-    lim.refund('1.2.3.4');
-    lim.refund('1.2.3.4');
-    expect(lim.allow('1.2.3.4')).toBe(true);
-    expect(lim.allow('1.2.3.4')).toBe(false);
-  });
   it('accepts a zero or extreme refill rate without an invalid cache ttl', () => {
     const lim = new IpRateLimiter(0, 1);
     expect(lim.allow('1.2.3.4')).toBe(true);
@@ -36,6 +28,17 @@ describe('IpRateLimiter buckets and budgets', () => {
     expect(bucketKey('203.0.113.5')).toBe('203.0.113.5');
     expect(bucketKey('::ffff:203.0.113.5')).toBe('203.0.113.5');
     expect(bucketKey('::ffff:cb00:7105')).toBe('203.0.113.5');
+    // Every spelling of ::ffff:0:0/96 is the same IPv4 client.
+    for (const mapped of ['0:0:0:0:0:ffff:cb00:7105', '0:0:0:0:0:ffff:203.0.113.5', '::FFFF:CB00:7105', '0:0:0:0:0:FFFF:203.0.113.5', '::ffff:203.0.113.5', '0000:0000:0000:0000:0000:ffff:cb00:7105'])
+      expect(bucketKey(mapped), mapped).toBe('203.0.113.5');
+    expect(bucketKey('0:0:0:0:0:ffff:7f00:1')).toBe('127.0.0.1');
+    // ::1 and other non-mapped addresses stay IPv6 /64s, apart from mapped ones.
+    expect(bucketKey('::1')).toBe('0:0:0:0::/64');
+    expect(bucketKey('::1')).not.toBe(bucketKey('::ffff:127.0.0.1'));
+    expect(bucketKey('::ffff:127.0.0.1')).toBe('127.0.0.1');
+    expect(bucketKey('64:ff9b::cb00:7105')).toBe('64:ff9b:0:0::/64');
+    expect(bucketKey('::fffe:cb00:7105')).toBe('0:0:0:0::/64');
+    expect(bucketKey('not an address')).toBe('not an address');
     const a = bucketKey('2001:db8:1:2:aaaa:bbbb:cccc:dddd');
     expect(a).toBe('2001:db8:1:2::/64');
     expect(bucketKey('2001:DB8:1:2::1')).toBe(a);

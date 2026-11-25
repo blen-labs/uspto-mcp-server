@@ -141,8 +141,9 @@ The production server assumes one trusted proxy hop, as on Railway.
   Tokens that fail the check on `/mcp/account` are limited to 2/s per IP (bursts
   of 120, in memory per process); past that, requests get 429 before any
   database lookup.
-  Behind a proxy, set `USPTO_CLIENT_IP_HEADER` (Railway: `x-real-ip`). Every per-IP limit
-  counts an IPv6 client by its /64 (and an IPv4-mapped address as its IPv4).
+  Behind a proxy, set `USPTO_CLIENT_IP_HEADER` (Railway: `x-real-ip`). This server's own per-IP
+  limits count an IPv6 client by its /64 (and an IPv4-mapped address as its IPv4); Better Auth's
+  built-in limits still receive the raw address.
   Only a token proven invalid spends the failed-token budget; valid tokens, 429s and
   database errors cost nothing, and at most 256 checks run at once per address.
 - **OAuth token locks.** `/oauth2/token` and `/oauth2/revoke` serialize per user (refresh,

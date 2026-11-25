@@ -55,16 +55,19 @@ export type LockTarget = { token: string } | { code: string } | { ambiguous: tru
  */
 export function lockTarget(path: string, contentType: string | undefined, body: Buffer | undefined): LockTarget {
   if ((contentType ?? '').toLowerCase().split(';')[0]!.trim() !== FORM_MEDIA_TYPE || !body) return undefined;
-  const params = new URLSearchParams(body.toString('utf8').replace(/^\uFEFF/, ''));
+  // The leading '&' keeps URLSearchParams from dropping a leading '?', which Better Auth's parser
+  // keeps in the first key (`?token=R` is a field named "?token", so it locks on nothing).
+  const params = new URLSearchParams('&' + body.toString('utf8').replace(/^\uFEFF/, ''));
   // The last value is what Better Auth uses; differing repeats are refused rather than guessed at.
-  const single = (name: string) => {
-    const values = params.getAll(name);
+  // grant_type is trimmed before it is compared, as Better Auth trims it before dispatching.
+  const single = (name: string, trim = false) => {
+    const values = params.getAll(name).map(v => (trim ? v.trim() : v));
     return new Set(values).size > 1 ? null : values.at(-1);
   };
   let name: 'token' | 'refresh_token' | 'code';
   if (path === '/oauth2/revoke') name = 'token';
   else {
-    const raw = single('grant_type');
+    const raw = single('grant_type', true);
     if (raw === null) return { ambiguous: true };
     // Better Auth trims grant_type before dispatching on it.
     const grant = raw?.trim();
