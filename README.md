@@ -227,6 +227,10 @@ are responsible for their own policies.
 - [patent-dev/uspto-odp](https://github.com/patent-dev/uspto-odp) (MIT) for published sample responses, used for the TSDR part of the field dictionary until it can be captured live (the ODP part is generated from live captures).
 - The [Model Context Protocol](https://modelcontextprotocol.io) team for the spec and TypeScript SDK.
 
+## For teams
+
+Want an MCP server for your team's or agency's data, or help running this one? [Talk to BLEN](https://www.blencorp.com/mcp).
+
 ---
 
-Built by [BLEN, Inc](https://www.blencorp.com).
+Built with ❤️ by [BLEN](https://www.blencorp.com).
