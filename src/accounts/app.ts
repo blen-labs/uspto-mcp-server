@@ -57,7 +57,7 @@ export async function lockTarget(path: string, contentType: string | undefined, 
   if ((contentType ?? '').toLowerCase().split(';')[0]!.trim() !== FORM_MEDIA_TYPE || !body) return undefined;
   let form: FormData;
   try {
-    form = await new Request('http://localhost/', { method: 'POST', headers: { 'content-type': contentType! }, body }).formData();
+    form = await new Request('http://localhost/', { method: 'POST', headers: { 'content-type': contentType! }, body: new Uint8Array(body) }).formData();
   } catch { return { ambiguous: true }; }
   // The last value is what Better Auth uses; differing repeats are refused rather than guessed at.
   const single = (name: string, trim = false) => {
