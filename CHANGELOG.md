@@ -5,6 +5,14 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-11-26
+
+### Fixed
+- announce the footer heart once (a11y)
+
+### Changed
+- sign "Built with ❤️ by BLEN" and add a teams call to action
+
 ## [0.4.1] - 2026-11-26
 
 ### Fixed
@@ -242,7 +250,8 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 - Docker image (Node 24 + Deno), an MCPB bundle (manifest v0.4) that prompts for keys, and
   third-party license notices in every artifact.
 
-[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.3.1...v0.3.2
