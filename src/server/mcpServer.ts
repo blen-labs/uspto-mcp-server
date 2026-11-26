@@ -54,7 +54,7 @@ export const SERVER_INSTRUCTIONS = [
 ].join('\n');
 
 /** This build's release. The release workflow stamps it; it also names the server to USPTO (User-Agent). */
-export const SERVER_VERSION = '0.4.2'; // x-release-version
+export const SERVER_VERSION = '0.4.3'; // x-release-version
 
 export function buildMcpServer(deps: CatalogDeps, requestCtx?: RequestCtx): McpServer {
   const server = new McpServer(

@@ -5,6 +5,18 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-11-26
+
+### Fixed
+- keep example outputs in examples/outputs and the install command in a dependency-free module (docs)
+
+### Changed
+- name examples/outputs in the Dockerfile docs-stage comment
+- count example statuses from returned records instead of an unverified facets shape
+- fix key-storage wording, runnable shell templates, fence labels and recipe outputs
+- describe what CODEOWNERS does
+- add CODEOWNERS for @blen-labs/maintainers
+
 ## [0.4.2] - 2026-11-26
 
 ### Fixed
@@ -250,7 +262,8 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 - Docker image (Node 24 + Deno), an MCPB bundle (manifest v0.4) that prompts for keys, and
   third-party license notices in every artifact.
 
-[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.3.2...v0.4.0
