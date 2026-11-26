@@ -7,8 +7,11 @@
 //
 // Exit codes: 0 clean; 1 unlabelled fences found.
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const FENCE = /^ *(`{3,}|~{3,})(.*)$/;
 
@@ -39,12 +42,13 @@ export function fencedBlocks(markdown) {
 export const unlabelledFences = (markdown) => fencedBlocks(markdown).filter((b) => b.info === '').map((b) => b.line);
 
 export function trackedMarkdown() {
-  const out = execFileSync('git', ['ls-files', '-z', '*.md', '*.mdx'], { encoding: 'utf8' });
-  return out.split('\0').filter(Boolean);
+  // Run from the repository root, and skip files that are tracked but deleted in the working tree.
+  const out = execFileSync('git', ['ls-files', '-z', '*.md', '*.mdx'], { encoding: 'utf8', cwd: root });
+  return out.split('\0').filter(f => f && existsSync(resolve(root, f)));
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const files = process.argv.length > 2 ? process.argv.slice(2) : trackedMarkdown();
+  const files = process.argv.length > 2 ? process.argv.slice(2) : trackedMarkdown().map(f => resolve(root, f));
   let failed = false;
   for (const file of files) {
     for (const line of unlabelledFences(readFileSync(file, 'utf8'))) {

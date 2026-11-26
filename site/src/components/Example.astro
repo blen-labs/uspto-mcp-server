@@ -24,5 +24,5 @@ const json = (value: unknown) => JSON.stringify(value, null, 2);
   The output is <strong>synthetic</strong>: the shape of a real result, with invented values.
 </p>
 <Code code={json(fixture.expected)} lang="json" title={`${file} output (synthetic)`} />
-<p>When nothing matches, the program returns an empty result, not an error.</p>
+<p>When nothing matches, the program returns this, and does not throw.</p>
 <Code code={json(fixture.noMatch.expected)} lang="json" title={`${file} output with no match (synthetic)`} />

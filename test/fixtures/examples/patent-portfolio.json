@@ -2,21 +2,14 @@
   "upstream": {
     "odp.patents.search": {
       "count": 2,
-      "facets": {
-        "applicationMetaData.applicationStatusDescriptionText": [
-          {
-            "value": "Patented Case",
-            "count": 2
-          }
-        ]
-      },
       "patentFileWrapperDataBag": [
         {
           "applicationNumberText": "19000002",
           "applicationMetaData": {
             "patentNumber": "12000002",
             "grantDate": "2025-06-10",
-            "inventionTitle": "Example battery separator"
+            "inventionTitle": "Example battery separator",
+            "applicationStatusDescriptionText": "Patented Case"
           }
         },
         {
@@ -24,7 +17,8 @@
           "applicationMetaData": {
             "patentNumber": "11000001",
             "grantDate": "2023-02-14",
-            "inventionTitle": "Example electrode coating"
+            "inventionTitle": "Example electrode coating",
+            "applicationStatusDescriptionText": "Patented Case"
           }
         }
       ]
@@ -47,12 +41,7 @@
       }
     ],
     "byStatus": {
-      "applicationMetaData.applicationStatusDescriptionText": [
-        {
-          "value": "Patented Case",
-          "count": 2
-        }
-      ]
+      "Patented Case": 2
     }
   },
   "noMatch": {
@@ -64,7 +53,8 @@
     },
     "expected": {
       "total": 0,
-      "patents": []
+      "patents": [],
+      "byStatus": {}
     }
   }
 }

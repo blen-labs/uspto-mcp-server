@@ -11,7 +11,7 @@ same outputs.
 
 | File | Demonstrates |
 |------|--------------|
-| [`patent-portfolio.js`](./patent-portfolio.js) | `odp.patents.search` with `q`, `filters`, `rangeFilters`, `sort`, `fields` and `facets`: an applicant's recent granted patents. |
+| [`patent-portfolio.js`](./patent-portfolio.js) | `odp.patents.search` with `q`, `filters`, `rangeFilters`, `sort` and `fields`: an applicant's recent granted patents, counted by status. |
 | [`ptab-challenges.js`](./ptab-challenges.js) | PTAB: every trial filed against a patent (`odp.ptab.proceedings.search`), then the decisions in one trial (`odp.ptab.decisions.byTrial`). |
 | [`prosecution-history.js`](./prosecution-history.js) | Patent number → application (`odp.patents.byPatentNumber`), then its office actions and rejection grounds (`odp.officeActions.search`). |
 | [`trademark-status.js`](./trademark-status.js) | TSDR: status of several trademark cases in one request (`tsdr.multiStatus`). |

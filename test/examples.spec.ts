@@ -52,7 +52,7 @@ describe('examples/', () => {
       expect(res.value).toEqual(expected);
     });
 
-    it.for(examples)('%s returns an empty result, not an error, when nothing matches', async ([name, code], { skip }) => {
+    it.for(examples)('%s returns the documented result, without throwing, when nothing matches', async ([name, code], { skip }) => {
       if (!(await runner.available())) return skip();
       const { noMatch } = fixture(name);
       const res = await runner.execute({ code, bindings: ['odp', 'tsdr'], timeoutMs: 3000 }, bridgeFor(noMatch.upstream));
