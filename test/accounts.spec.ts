@@ -1132,7 +1132,7 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     });
     expect(await advisoryHeld()).toBe(0);
   });
-  // ---- Bearer token admission (release 1): tokens this server issues are `at1.…` and admitted by their MAC. ----
+  // ---- Bearer token admission: tokens this server issues are `at1.…` and admitted by their MAC. ----
   /** What an empty POST gets once the token is admitted: the MCP transport refuses the missing content type. */
   const ADMITTED = 415;
   const mcpPost = (value: string, headers: Record<string, string> = {}) =>
@@ -1426,11 +1426,16 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     const ip = '192.0.2.161';
     // Two slots, used one at a time by the at1 callers: if junk took any, they would be refused with 429.
     await countingReplica({ maxTokenChecksInFlight: 2 }, async lookups => {
-      const flood = Array.from({ length: 1000 }, () => rawPost(randomToken(), ip));
+      const flood = Promise.all(Array.from({ length: 1000 }, () => rawPost(randomToken(), ip)));
       const served: number[] = [];
-      for (const value of at1) served.push(await rawPost(value, ip));
+      try {
+        for (const value of at1) served.push(await rawPost(value, ip));
+      } finally {
+        // Settle the flood before any assertion can throw, so no request outlives the replica.
+        await flood.catch(() => undefined);
+      }
       expect(statusCounts(served)).toEqual({ [ADMITTED]: 20 });
-      expect(statusCounts(await Promise.all(flood))).toEqual({ 401: 1000 });
+      expect(statusCounts(await flood)).toEqual({ 401: 1000 });
       expect(lookups.of.sort()).toEqual(at1.map(digest).sort());
       expect(await bucketCount(`mcp-ip:${ip}`)).toBe(20);
     });
