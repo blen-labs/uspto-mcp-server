@@ -147,6 +147,12 @@ describe('Streamable HTTP transport', () => {
     expect(read.value).toEqual({ count: 2, bulkDataProductBag: [{ productIdentifier: 'PTGRXML' }, { productIdentifier: 'PTGRSGM' }] });
   });
 
+  it('ignores the bearer header entirely without authentication, whatever the value looks like', async () => {
+    const { AccessTokenFormat } = await import('../src/accounts/token-admission.js');
+    for (const value of [new AccessTokenFormat('s'.repeat(32)).generate(), 'at1.junk', 'junk'])
+      expect((await rpc('tools/list', {}, { headers: { authorization: `Bearer ${value}` } })).status).toBe(200);
+  });
+
   it('serves OAuth 2.0 Protected Resource Metadata', async () => {
     const r = await fetch(`${base}/.well-known/oauth-protected-resource/mcp`);
     expect(r.status).toBe(200);
@@ -387,6 +393,16 @@ describe('Auth enforcement (OIDC, signed tokens from a local issuer)', () => {
     ['no subject', async () => sign({ iss: ISSUER, aud: AUDIENCE })],
   ])('rejects a token with %s (401)', async (_label, make) => {
     expect((await list(await make())).status).toBe(401);
+  });
+
+  it('judges every bearer value by its signature alone: the accounts-mode at1 format is not special here', async () => {
+    const { AccessTokenFormat } = await import('../src/accounts/token-admission.js');
+    const at1 = new AccessTokenFormat('s'.repeat(32)).generate();
+    // A MAC-valid at1 token, an at1-prefixed value and a legacy-shaped value are all just unverifiable JWTs.
+    for (const value of [at1, `at1.${'x'.repeat(40)}`, 'legacy-opaque-value']) expect((await list(value)).status, value.slice(0, 12)).toBe(401);
+    // Junk neither throttles nor gets in the way of a real token from the same address.
+    const token = await sign({ sub: 'user-1', iss: ISSUER, aud: AUDIENCE });
+    expect((await list(token)).status).toBe(200);
   });
 
   it('rejects a valid token without the required scope (403 insufficient_scope)', async () => {
