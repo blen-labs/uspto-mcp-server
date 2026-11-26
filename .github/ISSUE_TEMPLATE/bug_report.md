@@ -32,7 +32,7 @@ labels: bug
 <!-- Paste relevant log lines. Set USPTO_LOG_LEVEL=debug for more detail.
      Remove API keys first, and names or addresses from USPTO responses. -->
 
-```
+```text
 ```
 
 > **Security issue?** Please use a GitHub Security Advisory instead — see [SECURITY.md](https://github.com/blen-labs/uspto-mcp-server/blob/main/SECURITY.md).

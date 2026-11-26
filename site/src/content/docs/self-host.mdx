@@ -28,14 +28,15 @@ There is no sign-in. The server binds to `127.0.0.1` unless `HOST` or `--host` n
 ```bash
 USPTO_API_KEY=... \
 USPTO_AUTH_PROVIDER=clerk \
-USPTO_AUTH_ISSUER=https://<tenant>.clerk.accounts.dev \
-USPTO_AUTH_AUDIENCE=https://your-host.example.com/mcp \
-USPTO_AUTH_JWKS_URL=https://<tenant>.clerk.accounts.dev/.well-known/jwks.json \
-USPTO_PUBLIC_ORIGIN=https://your-host.example.com \
+USPTO_AUTH_ISSUER='https://your-tenant.clerk.accounts.dev' \
+USPTO_AUTH_AUDIENCE='https://your-host.example.com/mcp' \
+USPTO_AUTH_JWKS_URL='https://your-tenant.clerk.accounts.dev/.well-known/jwks.json' \
+USPTO_PUBLIC_ORIGIN='https://your-host.example.com' \
   npx @blen/uspto-mcp-server --http
 ```
 
-The issuer, the audience, and an HTTPS JWKS URL are all required. The provider can be `clerk`,
+Replace `...`, `your-tenant`, and `your-host.example.com` with your own values. The issuer, the
+audience, and an HTTPS JWKS URL are all required. The provider can be `clerk`,
 `workos`, `auth0`, or `generic-oidc`. Then give your client the URL
 `https://your-host.example.com/mcp`.
 

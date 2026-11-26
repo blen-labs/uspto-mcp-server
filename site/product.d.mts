@@ -1,0 +1,13 @@
+export declare const productName: string;
+export declare const site: string;
+export declare const base: string;
+export declare const repo: string;
+export declare const packageName: string;
+export declare const distribution: { npm: boolean; mcpb: boolean };
+export declare const serverName: string;
+export declare const description: string;
+export declare const tagline: string;
+export declare const keyEnv: string[];
+export declare const exampleKeyValues: Record<string, string>;
+export declare const llmsDetails: string[];
+export declare const pageLabels: Record<string, string>;

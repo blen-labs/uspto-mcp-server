@@ -46,7 +46,7 @@ node scripts/mcpb-smoke.mjs <unpacked-bundle-dir>                           # ex
 
 Request flow (all transports converge on the same tool catalog):
 
-```
+```text
 stdio | Streamable HTTP (+OAuth, Host/Origin, per-IP bucket, quotas) | accounts   src/server/{stdio,http}.ts, src/accounts/
   -> buildMcpServer (SDK v2 McpServer, registerTool + outputSchema)            src/server/mcpServer.ts, toolCatalog.ts
   -> tools: searchApi | describeSchema | execute (admission, budgets, cancel)   src/tools/

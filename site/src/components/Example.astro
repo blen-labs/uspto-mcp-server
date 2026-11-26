@@ -9,10 +9,20 @@ interface Props {
   file: string;
 }
 
-// examples/ is the single source: test/examples.spec.ts keeps each file runnable in the sandbox.
-// The path starts at the working directory because the build bundles this component elsewhere.
+// examples/ and test/fixtures/examples/ are the single source: test/examples.spec.ts runs each file
+// in the sandbox against its fixture and checks the result. The paths start at the working
+// directory because the build bundles this component elsewhere.
 const { file } = Astro.props;
-const code = await formatSnippet(readFileSync(resolve(process.cwd(), '../examples', file), 'utf8'));
+const repoFile = (...parts: string[]) => resolve(process.cwd(), '..', ...parts);
+const code = await formatSnippet(readFileSync(repoFile('examples', file), 'utf8'));
+const fixture = JSON.parse(readFileSync(repoFile('test/fixtures/examples', file.replace(/\.js$/, '.json')), 'utf8'));
+const json = (value: unknown) => JSON.stringify(value, null, 2);
 ---
 
-<Code code={code} lang="js" label={`Example: ${file}`} />
+<Code code={code} lang="js" title={file} />
+<p>
+  The output is <strong>synthetic</strong>: the shape of a real result, with invented values.
+</p>
+<Code code={json(fixture.expected)} lang="json" title={`${file} output (synthetic)`} />
+<p>When nothing matches, the program returns an empty result, not an error.</p>
+<Code code={json(fixture.noMatch.expected)} lang="json" title={`${file} output with no match (synthetic)`} />

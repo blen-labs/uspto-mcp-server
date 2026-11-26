@@ -50,9 +50,9 @@ only for yourself. With an OIDC issuer that publishes a JWKS endpoint:
 | Variable | Required | Example |
 |---|---|---|
 | `USPTO_AUTH_PROVIDER` | yes | `generic-oidc` \| `clerk` \| `workos` \| `auth0` |
-| `USPTO_AUTH_ISSUER` | yes | `https://<tenant>.clerk.accounts.dev` |
+| `USPTO_AUTH_ISSUER` | yes | `https://your-tenant.clerk.accounts.dev` |
 | `USPTO_AUTH_AUDIENCE` | yes | `https://your-host.example.com/mcp` |
-| `USPTO_AUTH_JWKS_URL` | yes (https) | `https://<tenant>.clerk.accounts.dev/.well-known/jwks.json` |
+| `USPTO_AUTH_JWKS_URL` | yes (https) | `https://your-tenant.clerk.accounts.dev/.well-known/jwks.json` |
 | `USPTO_AUTH_SCOPES` | no | `mcp:read` — scopes every token must carry |
 
 Tokens must carry the issuer and audience, `exp` and `sub`, and be signed with an

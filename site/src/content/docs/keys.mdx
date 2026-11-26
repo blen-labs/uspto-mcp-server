@@ -48,6 +48,14 @@ trademark questions.
 
 ## Where the key goes
 
-You give the keys to the server when you [connect your assistant](/connect/). They stay in the
-server process on your computer. They never enter the sandbox, and the server removes a key from
-results and errors.
+It depends on how you [connect your assistant](/connect/).
+
+- **On your computer** (the config file, the extension bundle, or `--http --insecure`). You give the
+  keys to a server process that runs on your computer, and they stay in that process.
+- **BLEN-hosted connector.** You save the keys on the account page. The service checks them with
+  USPTO, encrypts them, and stores them in its database under your sign-in. It uses them only for
+  your requests and never shows them again. See the
+  [privacy policy](https://uspto.mcp.blenlabs.com/privacy-policy).
+
+In both cases the keys never enter the sandbox, and the server removes a key from results and
+errors.
