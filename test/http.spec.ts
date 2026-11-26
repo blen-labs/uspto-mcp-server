@@ -49,12 +49,15 @@ describe('IpRateLimiter buckets and budgets', () => {
     expect(lim.allow('2001:db8:0:1::1')).toBe(true);
     expect([lim.allow('::ffff:1.2.3.4'), lim.allow('1.2.3.4'), lim.allow('1.2.3.4')]).toEqual([true, true, false]);
   });
-  it('available() spends nothing; spend() floors at zero', () => {
-    const lim = new IpRateLimiter(0, 2);
-    for (let i = 0; i < 5; i++) expect(lim.available('2001:db8::1')).toBe(true);
-    lim.spend('2001:db8::1'); lim.spend('2001:db8::ffff'); lim.spend('2001:db8::2');
-    expect(lim.available('2001:db8::9')).toBe(false);
-    expect(lim.allow('2001:db8::9')).toBe(false);
+  it('reservations are atomic and refunds never exceed the burst', () => {
+    const lim = new IpRateLimiter(0.001, 2);
+    // Concurrent callers each reserve before doing work: two credits admit exactly two.
+    expect([1, 2, 3, 4].map(() => lim.allow('2001:db8::1'))).toEqual([true, true, false, false]);
+    lim.refund('2001:db8::ffff'); // the same /64
+    expect(lim.allow('2001:db8::2')).toBe(true);
+    expect(lim.allow('2001:db8::3')).toBe(false);
+    for (let i = 0; i < 5; i++) lim.refund('2001:db8::1');
+    expect([1, 2, 3].map(() => lim.allow('2001:db8::1'))).toEqual([true, true, false]);
   });
   it('keys the base transport on the same buckets', () => {
     expect(bucketKey(clientIp({ socket: { remoteAddress: '::ffff:100.64.0.2' }, headers: {} } as unknown as IncomingMessage))).toBe('100.64.0.2');
