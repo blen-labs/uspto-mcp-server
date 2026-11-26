@@ -2,7 +2,7 @@
 
 ## Overview
 
-```
+```text
 Transport (stdio | Streamable HTTP + OAuth | account mode)
     ↓
 buildMcpServer  (search_api | describe_schema | execute)
@@ -363,7 +363,7 @@ The HTTP transport also enforces:
 
 ## Layout
 
-```
+```text
 src/
   bin.ts                   # CLI entry; the only module that reads process.env (plus the logger)
   index.ts                 # library exports

@@ -1,0 +1,64 @@
+{
+  "upstream": {
+    "odp.ptab.proceedings.search": {
+      "count": 1,
+      "patentTrialProceedingDataBag": [
+        {
+          "trialNumber": "IPR2099-00001",
+          "trialMetaData": {
+            "trialTypeCode": "IPR",
+            "trialStatusCategory": "Terminated-Settled"
+          },
+          "regularPetitionerData": {
+            "realPartyInInterestName": "Example Petitioner Inc."
+          }
+        }
+      ]
+    },
+    "odp.ptab.decisions.byTrial": {
+      "count": 1,
+      "patentTrialDocumentDataBag": [
+        {
+          "decisionData": {
+            "decisionIssueDate": "2099-02-01",
+            "decisionTypeCategory": "Decision",
+            "trialOutcomeCategory": "Denied"
+          },
+          "documentData": {
+            "documentTitleText": "Example decision on institution"
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "trials": [
+      {
+        "trial": "IPR2099-00001",
+        "type": "IPR",
+        "status": "Terminated-Settled",
+        "petitioner": "Example Petitioner Inc."
+      }
+    ],
+    "firstTrialDecisions": [
+      {
+        "date": "2099-02-01",
+        "type": "Decision",
+        "outcome": "Denied",
+        "title": "Example decision on institution"
+      }
+    ]
+  },
+  "noMatch": {
+    "upstream": {
+      "odp.ptab.proceedings.search": {
+        "count": 0,
+        "patentTrialProceedingDataBag": []
+      }
+    },
+    "expected": {
+      "trials": [],
+      "firstTrialDecisions": []
+    }
+  }
+}

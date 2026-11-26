@@ -1,14 +1,13 @@
 // One definition of how a client starts the server. Every button and snippet on the site is
 // built from it, and scripts/check-links.mjs decodes the built links against the same values.
 import { exampleKeyValues, keyEnv, packageName, productName, repo, serverName } from '../../product.mjs';
+import { args, command, claudeCodeCommand } from '../../install-command.mjs';
 
-export { packageName, productName, repo, serverName };
+export { claudeCodeCommand, packageName, productName, repo, serverName };
 
 // The release workflow attaches the Claude Desktop bundle to each GitHub Release under this name.
 export const bundleUrl = `${repo}/releases/latest/download/${repo.split('/').pop()}.mcpb`;
 
-const command = 'npx';
-const args = ['-y', packageName];
 
 // Deep links carry empty keys: the server treats a blank key as unset and answers with
 // instructions, where a made-up value would be sent to USPTO and refused.
@@ -30,11 +29,3 @@ export const mcpServersJson = JSON.stringify(
   null,
   2,
 );
-
-// One option to a line, as Claude Code's documentation writes a long command. On one line, the
-// page breaks the command in the middle of a key.
-export const claudeCodeCommand = [
-  `claude mcp add ${serverName}`,
-  ...Object.entries(exampleKeys).map(([name, value]) => `-e ${name}=${value}`),
-  `-- ${command} ${args.join(' ')}`,
-].join(' \\\n  ');

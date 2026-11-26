@@ -87,6 +87,17 @@ Everything product-specific about the site is in `site/product.mjs`.
 Its SDK reference page is `docs/sdk-reference.md`, copied in at build time, and its
 recipes are the files in `examples/`. Edit those sources, not the site.
 
+Documentation rules, each held by a test in `pnpm test`:
+
+- Label every code fence (`bash`, `json`, `js`, or `text` for diagrams and directory trees);
+  `node scripts/check-fences.mjs` lists the ones that are not.
+- Shell templates run as written: quote placeholders, and use `your-host.example.com`-style hosts.
+  `test/docs-shell.spec.ts` runs each template with `npx` and `claude` replaced by stubs.
+- Every program in `examples/` has a fixture in `examples/outputs/` with its expected result,
+  for a match and for no match. The README and the Recipes page show those fixtures, labelled
+  synthetic. Replace one with a real, dated output only after running the program against the live
+  API, and never commit a key.
+
 The HTTP integration test (`test/http-integration.spec.ts`) exercises a real
 `http.Server` against the v2 SDK's `createMcpHandler`/`toNodeHandler` over `fetch`,
 covering both the stateless `2026-07-28` leg and the legacy `initialize` fallback,

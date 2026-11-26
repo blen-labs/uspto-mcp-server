@@ -1,0 +1,71 @@
+{
+  "upstream": {
+    "odp.patents.byPatentNumber": {
+      "count": 1,
+      "patentFileWrapperDataBag": [
+        {
+          "applicationNumberText": "15000001",
+          "applicationMetaData": {
+            "inventionTitle": "Example device"
+          }
+        }
+      ]
+    },
+    "odp.officeActions.search": {
+      "count": 2,
+      "officeActionDataBag": [
+        {
+          "submissionDate": "2099-01-05",
+          "documentCode": "CTNF",
+          "documentCodeDescriptionText": "Non-Final Rejection",
+          "rejectionTypeBag": [
+            "103"
+          ]
+        },
+        {
+          "submissionDate": "2099-06-20",
+          "documentCode": "CTFR",
+          "documentCodeDescriptionText": "Final Rejection",
+          "rejectionTypeBag": [
+            "103",
+            "112"
+          ]
+        }
+      ]
+    }
+  },
+  "expected": {
+    "application": "15000001",
+    "title": "Example device",
+    "officeActions": [
+      {
+        "date": "2099-01-05",
+        "code": "CTNF",
+        "what": "Non-Final Rejection",
+        "grounds": [
+          "103"
+        ]
+      },
+      {
+        "date": "2099-06-20",
+        "code": "CTFR",
+        "what": "Final Rejection",
+        "grounds": [
+          "103",
+          "112"
+        ]
+      }
+    ]
+  },
+  "noMatch": {
+    "upstream": {
+      "odp.patents.byPatentNumber": {
+        "count": 0,
+        "patentFileWrapperDataBag": []
+      }
+    },
+    "expected": {
+      "error": "patent not found"
+    }
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "upstream": {
+    "tsdr.multiStatus": {
+      "transactionList": [
+        {
+          "trademarks": [
+            {
+              "status": {
+                "serialNumber": 90000001,
+                "markElement": "EXAMPLE MARK",
+                "tm5StatusDesc": "LIVE/REGISTERED",
+                "filingDate": "2099-03-01",
+                "usRegistrationNumber": "9000001"
+              },
+              "gsList": [
+                {
+                  "primeClassCode": "009"
+                },
+                {
+                  "primeClassCode": "042"
+                }
+              ]
+            },
+            {
+              "status": {
+                "serialNumber": 90000002,
+                "markElement": "SAMPLE NAME",
+                "tm5StatusDesc": "LIVE/PENDING",
+                "filingDate": "2099-04-12",
+                "usRegistrationNumber": ""
+              },
+              "gsList": [
+                {
+                  "primeClassCode": "035"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "expected": [
+    {
+      "serial": 90000001,
+      "mark": "EXAMPLE MARK",
+      "status": "LIVE/REGISTERED",
+      "filed": "2099-03-01",
+      "registration": "9000001",
+      "classes": [
+        "009",
+        "042"
+      ]
+    },
+    {
+      "serial": 90000002,
+      "mark": "SAMPLE NAME",
+      "status": "LIVE/PENDING",
+      "filed": "2099-04-12",
+      "registration": null,
+      "classes": [
+        "035"
+      ]
+    }
+  ],
+  "noMatch": {
+    "upstream": {
+      "tsdr.multiStatus": {
+        "transactionList": []
+      }
+    },
+    "expected": []
+  }
+}

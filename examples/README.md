@@ -4,12 +4,14 @@ Each file here is a snippet you can paste verbatim into the `execute` tool.
 They're plain JavaScript — the sandbox rejects TypeScript type annotations —
 and use top-level `await` and `return`, which `execute` allows because it wraps
 your code in an async function. `odp` and `tsdr` are sandbox globals, so the
-files aren't runnable with plain `node`. `test/examples.spec.ts` runs each one
-against a canned response to keep them pasteable.
+files aren't runnable with plain `node`. `test/examples.spec.ts` runs each one in
+the sandbox against the synthetic responses in `examples/outputs/` and checks
+the result, for a match and for no match. The docs site and the README show those
+same outputs.
 
 | File | Demonstrates |
 |------|--------------|
-| [`patent-portfolio.js`](./patent-portfolio.js) | `odp.patents.search` with `q`, `filters`, `rangeFilters`, `sort`, `fields` and `facets`: an applicant's recent granted patents. |
+| [`patent-portfolio.js`](./patent-portfolio.js) | `odp.patents.search` with `q`, `filters`, `rangeFilters`, `sort` and `fields`: an applicant's recent granted patents, counted by status. |
 | [`ptab-challenges.js`](./ptab-challenges.js) | PTAB: every trial filed against a patent (`odp.ptab.proceedings.search`), then the decisions in one trial (`odp.ptab.decisions.byTrial`). |
 | [`prosecution-history.js`](./prosecution-history.js) | Patent number → application (`odp.patents.byPatentNumber`), then its office actions and rejection grounds (`odp.officeActions.search`). |
 | [`trademark-status.js`](./trademark-status.js) | TSDR: status of several trademark cases in one request (`tsdr.multiStatus`). |

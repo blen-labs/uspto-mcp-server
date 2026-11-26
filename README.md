@@ -63,23 +63,65 @@ Requires **Node.js 24 or 26** (LTS). `npx` downloads and runs the server on dema
 
 > *"Has anyone challenged patent 10,169,987 at the PTAB?"*
 
-The model finds the right calls with `search_api` and runs them in the sandbox:
+The model finds the right calls with `search_api` and runs them in the sandbox. This is
+[`examples/ptab-challenges.js`](./examples/ptab-challenges.js), which the tests run:
 
 ```js
+// PTAB: every AIA trial (IPR/PGR/CBM) filed against one patent, then the decisions in the
+// first trial. Calls run one at a time per API key, so keep the fan-out small.
+const patentNumber = '10169987';
 const trials = await odp.ptab.proceedings.search({
-  q: 'patentOwnerData.patentNumber:10169987',
-  fields: ['trialNumber', 'trialMetaData.trialTypeCode', 'trialMetaData.trialStatusCategory',
-           'regularPetitionerData.realPartyInInterestName'],
+  q: `patentOwnerData.patentNumber:${patentNumber}`,
+  fields: ['trialNumber', 'trialMetaData.trialTypeCode', 'trialMetaData.trialStatusCategory', 'trialMetaData.petitionFilingDate', 'regularPetitionerData.realPartyInInterestName'],
+  limit: 50,
 });
-const first = trials.patentTrialProceedingDataBag[0].trialNumber;
-const decisions = await odp.ptab.decisions.byTrial(first);
-return decisions.patentTrialDocumentDataBag.map(d => ({
-  date: d.decisionData?.decisionIssueDate,
-  outcome: d.decisionData?.trialOutcomeCategory,
-}));
+const list = trials.patentTrialProceedingDataBag ?? [];
+const first = list[0]?.trialNumber;
+const decisions = first ? await odp.ptab.decisions.byTrial(first) : { patentTrialDocumentDataBag: [] };
+return {
+  trials: list.map(t => ({ trial: t.trialNumber, type: t.trialMetaData?.trialTypeCode, status: t.trialMetaData?.trialStatusCategory, petitioner: t.regularPetitionerData?.realPartyInInterestName })),
+  firstTrialDecisions: (decisions.patentTrialDocumentDataBag ?? []).map(d => ({
+    date: d.decisionData?.decisionIssueDate,
+    type: d.decisionData?.decisionTypeCategory,
+    outcome: d.decisionData?.trialOutcomeCategory,
+    title: d.documentData?.documentTitleText,
+  })),
+};
 ```
 
-…then answers in plain English, citing the trials and decisions it found.
+It returns the result below, and the model answers in plain English, citing the trials and decisions it found. This output is **synthetic**: the shape of a real result, with invented values (a real run needs your own USPTO key).
+
+```json
+{
+  "trials": [
+    {
+      "trial": "IPR2099-00001",
+      "type": "IPR",
+      "status": "Terminated-Settled",
+      "petitioner": "Example Petitioner Inc."
+    }
+  ],
+  "firstTrialDecisions": [
+    {
+      "date": "2099-02-01",
+      "type": "Decision",
+      "outcome": "Denied",
+      "title": "Example decision on institution"
+    }
+  ]
+}
+```
+
+When no trial matches, the program returns empty lists, not an error:
+
+```json
+{
+  "trials": [],
+  "firstTrialDecisions": []
+}
+```
+
+All four programs in [`examples/`](./examples/) are tested the same way, against fixtures in `examples/outputs/`.
 
 ## What's covered
 
@@ -148,12 +190,13 @@ USPTO_API_KEY=... npx @blen/uspto-mcp-server --http --insecure --port 8080
 
 # Your own server, authenticated via an OIDC issuer (your key serves only you: see API keys).
 # Issuer, audience and an https JWKS URL are all required; Deno must be installed.
+# Replace the `...` key, your-tenant and your-host.example.com with your own values.
 USPTO_API_KEY=... \
 USPTO_AUTH_PROVIDER=clerk \
-USPTO_AUTH_ISSUER=https://<tenant>.clerk.accounts.dev \
-USPTO_AUTH_AUDIENCE=https://your-host.example.com/mcp \
-USPTO_AUTH_JWKS_URL=https://<tenant>.clerk.accounts.dev/.well-known/jwks.json \
-USPTO_PUBLIC_ORIGIN=https://your-host.example.com \
+USPTO_AUTH_ISSUER='https://your-tenant.clerk.accounts.dev' \
+USPTO_AUTH_AUDIENCE='https://your-host.example.com/mcp' \
+USPTO_AUTH_JWKS_URL='https://your-tenant.clerk.accounts.dev/.well-known/jwks.json' \
+USPTO_PUBLIC_ORIGIN='https://your-host.example.com' \
   npx @blen/uspto-mcp-server --http
 ```
 
