@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { MockAgent } from 'undici';
 import { gzipSync } from 'node:zlib';
 import type { IncomingMessage } from 'node:http';
-import { IpRateLimiter, clientIp } from '../src/server/ipRateLimiter.js';
+import { IpRateLimiter, bucketKey, clientIp } from '../src/server/ipRateLimiter.js';
 import { SubjectQuota } from '../src/util/quotas.js';
 import { HttpClient } from '../src/util/httpClient.js';
 import { UpstreamGate } from '../src/util/upstreamGate.js';
@@ -15,19 +15,49 @@ describe('IpRateLimiter', () => {
     expect(lim.allow('1.2.3.4')).toBe(true);
     expect(lim.allow('1.2.3.4')).toBe(false);
   });
-  it('refunds a spent token, up to burst', () => {
-    const lim = new IpRateLimiter(0, 1);
-    expect(lim.allow('1.2.3.4')).toBe(true);
-    lim.refund('1.2.3.4');
-    lim.refund('1.2.3.4');
-    expect(lim.allow('1.2.3.4')).toBe(true);
-    expect(lim.allow('1.2.3.4')).toBe(false);
-  });
   it('accepts a zero or extreme refill rate without an invalid cache ttl', () => {
     const lim = new IpRateLimiter(0, 1);
     expect(lim.allow('1.2.3.4')).toBe(true);
     expect(lim.allow('1.2.3.4')).toBe(false);
     expect(() => new IpRateLimiter(1e-300, 1e10)).not.toThrow();
+  });
+});
+
+describe('IpRateLimiter buckets and budgets', () => {
+  it('counts an IPv6 /64 as one client and an IPv4-mapped address as its IPv4', () => {
+    expect(bucketKey('203.0.113.5')).toBe('203.0.113.5');
+    expect(bucketKey('::ffff:203.0.113.5')).toBe('203.0.113.5');
+    expect(bucketKey('::ffff:cb00:7105')).toBe('203.0.113.5');
+    // Every spelling of ::ffff:0:0/96 is the same IPv4 client.
+    for (const mapped of ['0:0:0:0:0:ffff:cb00:7105', '0:0:0:0:0:ffff:203.0.113.5', '::FFFF:CB00:7105', '0:0:0:0:0:FFFF:203.0.113.5', '::ffff:203.0.113.5', '0000:0000:0000:0000:0000:ffff:cb00:7105'])
+      expect(bucketKey(mapped), mapped).toBe('203.0.113.5');
+    expect(bucketKey('0:0:0:0:0:ffff:7f00:1')).toBe('127.0.0.1');
+    // ::1 and other non-mapped addresses stay IPv6 /64s, apart from mapped ones.
+    expect(bucketKey('::1')).toBe('0:0:0:0::/64');
+    expect(bucketKey('::1')).not.toBe(bucketKey('::ffff:127.0.0.1'));
+    expect(bucketKey('::ffff:127.0.0.1')).toBe('127.0.0.1');
+    expect(bucketKey('64:ff9b::cb00:7105')).toBe('64:ff9b:0:0::/64');
+    expect(bucketKey('::fffe:cb00:7105')).toBe('0:0:0:0::/64');
+    expect(bucketKey('not an address')).toBe('not an address');
+    const a = bucketKey('2001:db8:1:2:aaaa:bbbb:cccc:dddd');
+    expect(a).toBe('2001:db8:1:2::/64');
+    expect(bucketKey('2001:DB8:1:2::1')).toBe(a);
+    expect(bucketKey('2001:db8:1:2::')).toBe(a);
+    expect(bucketKey('2001:db8:1:3::1')).not.toBe(a);
+    const lim = new IpRateLimiter(0, 2);
+    expect([lim.allow('2001:db8::1'), lim.allow('2001:db8::2'), lim.allow('2001:db8::3')]).toEqual([true, true, false]);
+    expect(lim.allow('2001:db8:0:1::1')).toBe(true);
+    expect([lim.allow('::ffff:1.2.3.4'), lim.allow('1.2.3.4'), lim.allow('1.2.3.4')]).toEqual([true, true, false]);
+  });
+  it('available() spends nothing; spend() floors at zero', () => {
+    const lim = new IpRateLimiter(0, 2);
+    for (let i = 0; i < 5; i++) expect(lim.available('2001:db8::1')).toBe(true);
+    lim.spend('2001:db8::1'); lim.spend('2001:db8::ffff'); lim.spend('2001:db8::2');
+    expect(lim.available('2001:db8::9')).toBe(false);
+    expect(lim.allow('2001:db8::9')).toBe(false);
+  });
+  it('keys the base transport on the same buckets', () => {
+    expect(bucketKey(clientIp({ socket: { remoteAddress: '::ffff:100.64.0.2' }, headers: {} } as unknown as IncomingMessage))).toBe('100.64.0.2');
   });
 });
 
@@ -460,5 +490,19 @@ describe('HttpClient absolute deadline', () => {
       server.closeAllConnections();
       await new Promise<void>(r => server.close(() => r()));
     }
+  });
+});
+
+describe('address canonicalization is linear in input size', () => {
+  it('handles a huge zone id and a long digit run quickly, with mapped spellings intact', () => {
+    const t0 = performance.now();
+    bucketKey(`fe80::1%${'%'.repeat(100_000)}`);
+    bucketKey(`::ffff:1.2.3.${'9'.repeat(100_000)}`);
+    bucketKey(`2001:db8::${'9'.repeat(100_000)}`);
+    expect(performance.now() - t0).toBeLessThan(200);
+    expect(bucketKey('fe80::1%eth0')).toBe('fe80:0:0:0::/64');
+    expect(bucketKey('::ffff:203.0.113.5')).toBe('203.0.113.5');
+    expect(bucketKey('0:0:0:0:0:ffff:203.0.113.5')).toBe('203.0.113.5');
+    expect(bucketKey('2001:db8:1:2:0:0:203.0.113.5')).toBe('2001:db8:1:2::/64');
   });
 });

@@ -1,4 +1,5 @@
 import type { IncomingMessage } from 'node:http';
+import { isIPv4, isIPv6 } from 'node:net';
 import { LRUCache } from 'lru-cache';
 
 /**
@@ -17,22 +18,27 @@ export class IpRateLimiter {
     this.buckets = new LRUCache({ max: 50_000, ttl });
   }
 
-  allow(ip: string): boolean {
-    const b = this.refilled(ip);
-    if (b.tokens < 1) {
-      this.buckets.set(ip, b);
-      return false;
-    }
-    b.tokens -= 1;
-    this.buckets.set(ip, b);
-    return true;
+  /** True when the address bucket has a token left; spends nothing. */
+  available(ip: string): boolean {
+    return this.refilled(bucketKey(ip)).tokens >= 1;
   }
 
-  /** Gives back a token that `allow(ip)` spent, for a request that turned out not to count. */
-  refund(ip: string): void {
-    const b = this.refilled(ip);
-    b.tokens = Math.min(this.burst, b.tokens + 1);
-    this.buckets.set(ip, b);
+  /** Spends a token even when none is left (the balance floors at zero). */
+  spend(ip: string): void {
+    const key = bucketKey(ip);
+    const b = this.refilled(key);
+    b.tokens = Math.max(0, b.tokens - 1);
+    this.buckets.set(key, b);
+  }
+
+  /** Spends one token; false when the address bucket is out of them. */
+  allow(ip: string): boolean {
+    const key = bucketKey(ip);
+    const b = this.refilled(key);
+    const ok = b.tokens >= 1;
+    if (ok) b.tokens -= 1;
+    this.buckets.set(key, b);
+    return ok;
   }
 
   private refilled(ip: string): { tokens: number; updatedAt: number } {
@@ -63,6 +69,44 @@ export function clientIp(req: IncomingMessage, trustedHeader?: string): string {
   return candidate ? normalize(candidate) : peer;
 }
 
+/** The 8 groups of an IPv6 address (a dotted IPv4 tail counts as two), or undefined if it is not one. */
+function ipv6Groups(ip: string): number[] | undefined {
+  if (!isIPv6(ip)) return undefined;
+  // Linear string scans, not regexes: the input is client-controlled and unbounded (zone ids).
+  const zone = ip.indexOf('%');
+  if (zone !== -1) ip = ip.slice(0, zone);
+  const cut = ip.lastIndexOf(':') + 1;
+  const last = ip.slice(cut);
+  if (last.includes('.')) {
+    if (!isIPv4(last)) return undefined;
+    const [a, b, c, d] = last.split('.').map(Number) as [number, number, number, number];
+    ip = `${ip.slice(0, cut)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const [head = '', tail] = ip.split('::');
+  const first = head ? head.split(':') : [];
+  const rest = tail === undefined ? [] : tail ? tail.split(':') : [];
+  const missing = 8 - first.length - rest.length;
+  if (tail === undefined ? missing !== 0 : missing < 1) return undefined;
+  const groups = [...first, ...Array<string>(tail === undefined ? 0 : missing).fill('0'), ...rest].map(g => parseInt(g, 16));
+  return groups.length === 8 && groups.every(g => g >= 0 && g <= 0xffff) ? groups : undefined;
+}
+
+/** An IPv4-mapped address (::ffff:0:0/96, in any spelling) is the IPv4 client; anything else is returned as is. */
 function normalize(ip: string): string {
-  return ip.replace(/^::ffff:/, '');
+  const g = ipv6Groups(ip);
+  if (g && g.slice(0, 5).every(x => x === 0) && g[5] === 0xffff)
+    return `${g[6]! >> 8}.${g[6]! & 255}.${g[7]! >> 8}.${g[7]! & 255}`;
+  return ip;
+}
+
+/**
+ * The bucket an address is counted in. An IPv6 customer controls a whole /64 (usually far more),
+ * so counting single addresses would let one host mint endless fresh buckets. IPv4 (and
+ * IPv4-mapped IPv6) is counted per address.
+ */
+export function bucketKey(ip: string): string {
+  ip = normalize(ip);
+  const g = ipv6Groups(ip);
+  if (!g) return ip;
+  return `${g.slice(0, 4).map(x => x.toString(16)).join(':')}::/64`;
 }
