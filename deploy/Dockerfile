@@ -20,7 +20,7 @@ COPY legal ./legal
 RUN pnpm build && pnpm prune --prod
 
 # ---- Docs: the documentation site (site/, Astro Starlight), served at /docs --------------
-# Its own pnpm root and lockfile. The build reads docs/sdk-reference.md and examples/*.js, and
+# Its own pnpm root and lockfile. The build reads docs/sdk-reference.md and examples/*.js and examples/outputs/*.json, and
 # its link check reads package.json and release.yml.
 FROM node:26-trixie-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc AS docs
 WORKDIR /repo
