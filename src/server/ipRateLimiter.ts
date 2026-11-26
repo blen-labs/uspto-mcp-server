@@ -18,7 +18,7 @@ export class IpRateLimiter {
     this.buckets = new LRUCache({ max: 50_000, ttl });
   }
 
-  /** Atomically reserves one token; false when the address bucket is out of them. Pair a reservation with `refund`. */
+  /** Atomically takes one token; false when the address bucket is out of them. */
   allow(ip: string): boolean {
     const key = bucketKey(ip);
     const b = this.refilled(key);
@@ -26,14 +26,6 @@ export class IpRateLimiter {
     if (ok) b.tokens -= 1;
     this.buckets.set(key, b);
     return ok;
-  }
-
-  /** Gives back a token that `allow(ip)` reserved, for a request that turned out not to count. */
-  refund(ip: string): void {
-    const key = bucketKey(ip);
-    const b = this.refilled(key);
-    b.tokens = Math.min(this.burst, b.tokens + 1);
-    this.buckets.set(key, b);
   }
 
   private refilled(ip: string): { tokens: number; updatedAt: number } {
