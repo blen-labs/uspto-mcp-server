@@ -140,14 +140,12 @@ The production server assumes one trusted proxy hop, as on Railway.
 - MCP request bodies are capped at 1 MiB.
 - Fixed limits: 600 requests/min per IP for browser traffic, 6000/min per IP on
   `/mcp/account`, 600/min per user on `/mcp/account`, 5 key checks/min per user.
-  Bearer tokens are admitted by their authenticated format before any failure budget applies
-  (see [Bearer token admission](#bearer-token-admission)); only legacy-shaped tokens are limited to 2/s per IP
-  (bursts of 256, in memory per process), and past that get 429 before any database lookup.
+  Bearer tokens are admitted by their authenticated format before any database lookup or shared
+  budget (see [Bearer token admission](#bearer-token-admission)).
   Behind a proxy, set `USPTO_CLIENT_IP_HEADER` (Railway: `x-real-ip`). This server's own per-IP
   limits count an IPv6 client by its /64 (and an IPv4-mapped address as its IPv4); Better Auth's
   built-in limits still receive the raw address.
-  Only a legacy-shaped token proven invalid spends the failed-token budget; valid tokens, 429s and
-  database errors cost nothing, and at most 256 legacy and 256 `at1` checks run at once per address.
+  At most 256 token checks run at once per address.
 - **OAuth token locks.** `/oauth2/token` and `/oauth2/revoke` serialize per user (refresh,
   revoke) or per code (code exchange) with a transaction-scoped PostgreSQL advisory lock, so
   refresh rotation and replay invalidation never interleave across replicas. The lock follows
@@ -176,7 +174,7 @@ users out of an address. Access tokens are issued in an authenticated format,
 (HKDF, separate per key ID) over the rest of the token. `/mcp/account` admits a token in this order:
 
 1. A value with the `at1.` prefix and a wrong shape, unknown key ID or bad MAC is `401` with no database
-   work, no failure budget and no in-flight slot. Parsing is strict and the MAC is compared in constant time.
+   work, no flood allowance and no in-flight slot. Parsing is strict and the MAC is compared in constant time.
 2. A MAC-valid token older than `issued-at + 15 minutes + 60 s` is `401` with no database work. The 60 s is
    clock skew for this cheap bound only; the database expiry stays authoritative and never gains the skew.
 3. A digest whose completed database check was rejected (revoked, no row, wrong resource, disabled client,
@@ -196,8 +194,7 @@ users out of an address. Access tokens are issued in an authenticated format,
    passes, every queued request is answered `401` at once and the queue is released; if it succeeded, they
    proceed 16 at a time. A later rejection never renews an existing negative entry's expiry.
 6. A running check takes an in-flight slot (256 per IP bucket) and the `mcp-ip:` flood guard (6,000 a minute),
-   and every admitted request still does the full database check. The failed-token budget is neither
-   consulted nor charged.
+   and every admitted request still does the full database check.
 
 So one rejected digest that was never validated costs one lookup per replica while its entry is kept (a
 restart or eviction costs one more). A token validated and then revoked holds at most 16 slots until its
@@ -213,31 +210,28 @@ bounded (256 per digest, 4,096 overall) and drain as checks finish.
 
 Only tokens issued by this server's own OAuth provider go through these checks, and only on `/mcp/account`.
 Everything else is unchanged: Better Auth's own `/api/auth/oauth2/userinfo` still looks the presented token
-up by its digest and treats `at1` and legacy tokens alike (introspection and revocation take the token in the
+up by its digest and accepts any stored token (introspection and revocation take the token in the
 request body); the anonymous `/mcp` endpoint reads no token and ignores any bearer value; the
 base HTTP transport (`--http` without accounts) verifies OIDC/JWT bearer tokens by signature, issuer, audience
 and scope with its own per-IP limit, or accepts requests without a token under `--insecure`; stdio has no
 bearer tokens.
 
+Only tokens in the authenticated format are accepted: a bearer token without the `at1.` prefix, including an
+old-format token that is still stored, is refused at step 1 with `401` (no database work, no in-flight slot, no
+flood allowance), so junk of any shape never touches the `mcp-ip:` allowance or the slots that valid users on a
+shared address depend on. A client holding a token issued before the format was introduced refreshes once.
+
 ## Bearer token rollout
 
-The change ships in two releases, with no timers: legacy removal is a code change, so restarts never reopen it
-and every replica runs one rule.
+The old format was retired in two releases, with no timers: the change is code, so restarts never reopen it and
+every replica runs one rule.
 
-- **Release 1 (dual-accept).** Issues `at1` tokens and accepts both shapes. Legacy-shaped tokens (no `at1.`
-  prefix, issued before this change) use the old failed-token budget, applied only to them: 2 credits a second
-  after a burst as large as the legacy in-flight cap (256 per IP bucket). A credit is reserved before the
-  lookup and refunded unless the token is proven invalid, so concurrent requests cannot share one credit,
-  while valid legacy users keep the previous concurrency and junk still spends. Legacy lookups also have their
-  own flood key (`mcp-ip-legacy:`, 6,000 a minute). Because the budgets, caps and flood keys are separate, a
-  legacy junk flood cannot consume `at1` capacity; conversely, during release 1 one IP can reach up to twice
-  the previous database concurrency (256 on each path) until release 2 removes the legacy path. Rolling back
-  to the previous version is safe: it validates by database digest only, and `at1` tokens are opaque strings
-  to it. Record the time the deploy finished, with no rollback, on every replica.
-- **Release 2 (legacy removed).** Rejects legacy-shaped tokens at the first check. It may ship only after
-  release 1 has been fully deployed, with no rollback, for at least `accessTokenExpiresIn + skew` (15 minutes
-  + 60 s), the longest a legacy token issued by the last old instance can still be valid. Rolling back
-  release 2 to release 1 is safe. Refresh tokens are unaffected by either release.
+- **Release 1 (dual-accept)** issued `at1` tokens and still accepted the old format on a separate path.
+  **Release 2** removed that path. It could ship only after release 1 had been fully deployed, with no rollback,
+  for at least `accessTokenExpiresIn + skew` (15 minutes + 60 s), the longest an old-format token issued by the
+  last old instance can still be valid. Refresh tokens are unaffected.
+- **Rollback.** Rolling back release 2 to release 1 is safe, as is rolling back release 1 to the version before
+  it: that version validates by database digest only, and `at1` tokens are opaque strings to it.
 - **Changing `accessTokenExpiresIn`.** The admission bound uses the maximum lifetime of any token that may
   still be valid: when raising or lowering it, keep the larger value in the bound until tokens issued under
   the old setting have expired.
