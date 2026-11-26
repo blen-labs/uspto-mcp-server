@@ -5,6 +5,14 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-11-26
+
+### Fixed
+- admit bearer tokens by authenticated format before the failure budget (security)
+
+### Changed
+- drive the legacy budget with the replica clock instead of fake timers (accounts)
+
 ## [0.4.3] - 2026-11-26
 
 ### Fixed
@@ -262,7 +270,8 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 - Docker image (Node 24 + Deno), an MCPB bundle (manifest v0.4) that prompts for keys, and
   third-party license notices in every artifact.
 
-[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.3...HEAD
+[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.4...HEAD
+[0.4.4]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.0...v0.4.1
