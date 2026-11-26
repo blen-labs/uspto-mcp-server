@@ -5,6 +5,18 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-26
+
+### Fixed
+- canonicalize IPv6 addresses in linear time (security)
+- pass the lock body to Request as a Uint8Array (types)
+- choose token locks with the runtime form parser Better Auth uses (security)
+- unmap every IPv4-mapped spelling, keep a leading ? in lock parsing, trim repeated grant_type (security)
+- derive OAuth token locks from the executed operation and harden limiters (security)
+
+### Changed
+- make .railway/railway.ts the only Railway config (deploy)
+
 ## [0.4.0] - 2026-11-21
 
 ### Added
@@ -230,7 +242,8 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 - Docker image (Node 24 + Deno), an MCPB bundle (manifest v0.4) that prompts for keys, and
   third-party license notices in every artifact.
 
-[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.3.0...v0.3.1
