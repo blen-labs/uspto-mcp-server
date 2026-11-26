@@ -121,7 +121,7 @@ When no trial matches, the program returns empty lists, not an error:
 }
 ```
 
-All four programs in [`examples/`](./examples/) are tested the same way, against fixtures in `test/fixtures/examples/`.
+All four programs in [`examples/`](./examples/) are tested the same way, against fixtures in `examples/outputs/`.
 
 ## What's covered
 

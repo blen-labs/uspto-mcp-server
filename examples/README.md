@@ -5,7 +5,7 @@ They're plain JavaScript — the sandbox rejects TypeScript type annotations —
 and use top-level `await` and `return`, which `execute` allows because it wraps
 your code in an async function. `odp` and `tsdr` are sandbox globals, so the
 files aren't runnable with plain `node`. `test/examples.spec.ts` runs each one in
-the sandbox against the synthetic responses in `test/fixtures/examples/` and checks
+the sandbox against the synthetic responses in `examples/outputs/` and checks
 the result, for a match and for no match. The docs site and the README show those
 same outputs.
 

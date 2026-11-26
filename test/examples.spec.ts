@@ -11,11 +11,11 @@ import { IsolateRunner } from '../src/sandbox/isolate.js';
 const dir = resolve(__dirname, '../examples');
 const examples = readdirSync(dir).filter(f => f.endsWith('.js')).map(f => [f, readFileSync(resolve(dir, f), 'utf8')] as const);
 
-// Each example has a fixture of synthetic upstream responses (test/fixtures/examples/<name>.json)
+// Each example has a fixture of synthetic upstream responses (examples/outputs/<name>.json)
 // and the value the program must return, for a match and for no match. The docs render the same
 // fixtures as the example's output, so what they show is what these tests check.
 interface Fixture { upstream: Record<string, unknown>; expected: unknown; noMatch: { upstream: Record<string, unknown>; expected: unknown } }
-const fixture = (file: string) => JSON.parse(readFileSync(resolve(__dirname, 'fixtures/examples', file.replace(/\.js$/, '.json')), 'utf8')) as Fixture;
+const fixture = (file: string) => JSON.parse(readFileSync(resolve(__dirname, '../examples/outputs', file.replace(/\.js$/, '.json')), 'utf8')) as Fixture;
 
 // Answers each call from the fixture by its path and fails any call the fixture does not have, so
 // an example that starts making another request must say so here.

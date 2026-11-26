@@ -9,13 +9,13 @@ interface Props {
   file: string;
 }
 
-// examples/ and test/fixtures/examples/ are the single source: test/examples.spec.ts runs each file
+// examples/ and examples/outputs/ are the single source: test/examples.spec.ts runs each file
 // in the sandbox against its fixture and checks the result. The paths start at the working
 // directory because the build bundles this component elsewhere.
 const { file } = Astro.props;
 const repoFile = (...parts: string[]) => resolve(process.cwd(), '..', ...parts);
 const code = await formatSnippet(readFileSync(repoFile('examples', file), 'utf8'));
-const fixture = JSON.parse(readFileSync(repoFile('test/fixtures/examples', file.replace(/\.js$/, '.json')), 'utf8'));
+const fixture = JSON.parse(readFileSync(repoFile('examples/outputs', file.replace(/\.js$/, '.json')), 'utf8'));
 const json = (value: unknown) => JSON.stringify(value, null, 2);
 ---
 

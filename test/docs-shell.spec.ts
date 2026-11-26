@@ -4,7 +4,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fencedBlocks } from '../scripts/check-fences.mjs';
-import { claudeCodeCommand } from '../site/src/lib/install';
+import { claudeCodeCommand } from '../site/install-command.mjs';
 
 // The shell templates in the docs are run as written, with `npx` and `claude` replaced by stubs
 // that record what they were called with. A template that the shell breaks before it reaches the

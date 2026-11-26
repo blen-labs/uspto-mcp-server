@@ -93,7 +93,7 @@ Documentation rules, each held by a test in `pnpm test`:
   `node scripts/check-fences.mjs` lists the ones that are not.
 - Shell templates run as written: quote placeholders, and use `your-host.example.com`-style hosts.
   `test/docs-shell.spec.ts` runs each template with `npx` and `claude` replaced by stubs.
-- Every program in `examples/` has a fixture in `test/fixtures/examples/` with its expected result,
+- Every program in `examples/` has a fixture in `examples/outputs/` with its expected result,
   for a match and for no match. The README and the Recipes page show those fixtures, labelled
   synthetic. Replace one with a real, dated output only after running the program against the live
   API, and never commit a key.
