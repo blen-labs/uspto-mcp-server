@@ -141,7 +141,26 @@ The production server assumes one trusted proxy hop, as on Railway.
   Tokens that fail the check on `/mcp/account` are limited to 2/s per IP (bursts
   of 120, in memory per process); past that, requests get 429 before any
   database lookup.
-  Behind a proxy, set `USPTO_CLIENT_IP_HEADER` (Railway: `x-real-ip`).
+  Behind a proxy, set `USPTO_CLIENT_IP_HEADER` (Railway: `x-real-ip`). This server's own per-IP
+  limits count an IPv6 client by its /64 (and an IPv4-mapped address as its IPv4); Better Auth's
+  built-in limits still receive the raw address.
+  Only a token proven invalid spends the failed-token budget; valid tokens, 429s and
+  database errors cost nothing, and at most 256 checks run at once per address.
+- **OAuth token locks.** `/oauth2/token` and `/oauth2/revoke` serialize per user (refresh,
+  revoke) or per code (code exchange) with a transaction-scoped PostgreSQL advisory lock, so
+  refresh rotation and replay invalidation never interleave across replicas. The lock follows
+  the operation Better Auth runs: form-encoded bodies only (last value of a repeated field
+  wins), revoke uses `token`, a refresh grant `refresh_token`, a code exchange `code`; a
+  conflicting repeat of `grant_type` or that field is a 400 `invalid_request`. Requests with
+  nothing to lock (client_credentials, missing fields, other media types) take no lock.
+  Each address is limited in memory to 20 token requests a second (bursts of 600) before
+  any lookup. The locks use a separate pool of `AUTH_LOCK_POOL_SIZE` connections per replica
+  (default 10, 2 to 200) in addition to the main pool, so budget
+  `replicas x (main pool + AUTH_LOCK_POOL_SIZE)` against PostgreSQL's `max_connections`. A
+  waiting request holds one inside an open transaction (`idle in transaction`, 10 second
+  `lock_timeout`): do not set a shorter `idle_in_transaction_session_timeout` on the role than
+  that plus the slowest token response. A request that cannot get a lock or a connection in
+  10 seconds is rolled back and answered 503 with `Retry-After: 5`; the client retries.
 - Browser state-changing requests require same-origin JSON; cookies are HttpOnly
   and SameSite, Secure in production. Responses are non-cacheable.
 - Audit rows record owner, actor, action (`credential.<kind>.saved` /

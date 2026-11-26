@@ -1,5 +1,6 @@
 import express from 'express';
 import { Pool } from 'pg';
+import { stripAccessTokenAuthorizationScheme } from 'better-auth/oauth2';
 import { createMcpHandler } from '@modelcontextprotocol/server';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import { buildMcpServer, MCP_PROTOCOL_VERSION } from '../server/mcpServer.js';
@@ -10,7 +11,7 @@ import { createAuth, initializeAuth, type Auth } from './provider.js';
 import { installPortal } from './portal.js';
 import { digest } from './crypto.js';
 import { log } from '../util/logger.js';
-import { IpRateLimiter, clientIp } from '../server/ipRateLimiter.js';
+import { IpRateLimiter, bucketKey, clientIp } from '../server/ipRateLimiter.js';
 import { originAllowed, bearerToken, MAX_REQUEST_BODY_BYTES } from '../server/http.js';
 import { ACCOUNT_MCP_PATH, PUBLIC_MCP_PATH } from './paths.js';
 import { DOCS_PATH, docsHandler } from './docs.js';
@@ -33,6 +34,61 @@ const CORS_ALLOW_HEADERS =
 
 /** Longest a token or revoke request waits for a lock connection, and then for the lock. */
 const LOCK_WAIT_MS = 10_000;
+/** Most /mcp token checks in flight per address bucket, so concurrency cannot dodge the failure budget. */
+const MAX_TOKEN_CHECKS_IN_FLIGHT = 256;
+/** Token and revoke requests per address: 20 each second, bursts of 600 (Better Auth's own limit is 1200 a minute). */
+const TOKEN_REQUEST_RPS = 20;
+const TOKEN_REQUEST_BURST = 600;
+const FORM_MEDIA_TYPE = 'application/x-www-form-urlencoded';
+
+/** What a /oauth2/token or /oauth2/revoke body asks to lock on, as Better Auth will read it. */
+export type LockTarget = { token: string } | { code: string } | { ambiguous: true } | undefined;
+/**
+ * Reads the body with the runtime parser Better Auth itself uses (`Request.formData()`, so quirks
+ * such as a leading '?' or a BOM are whatever this Node does) and names what the operation it
+ * will run is about: revoke acts on `token`; a refresh grant on `refresh_token`; a code exchange
+ * on `code`. Fields that operation ignores never choose the lock. A repeated `grant_type` (after
+ * trimming, as Better Auth trims before dispatching) or chosen field with differing values is
+ * ambiguous, and so is a body the parser rejects; the caller answers 400 for both. Anything else
+ * (another media type, client_credentials, a missing or unknown grant, an empty value) is refused
+ * or changes nothing downstream, so it takes no lock.
+ */
+export async function lockTarget(path: string, contentType: string | undefined, body: Buffer | undefined): Promise<LockTarget> {
+  if ((contentType ?? '').toLowerCase().split(';')[0]!.trim() !== FORM_MEDIA_TYPE || !body) return undefined;
+  let form: FormData;
+  try {
+    form = await new Request('http://localhost/', { method: 'POST', headers: { 'content-type': contentType! }, body: new Uint8Array(body) }).formData();
+  } catch { return { ambiguous: true }; }
+  // The last value is what Better Auth uses; differing repeats are refused rather than guessed at.
+  const single = (name: string, trim = false) => {
+    const values = form.getAll(name).map(v => (typeof v === 'string' && trim ? v.trim() : v));
+    if (new Set(values).size > 1) return null;
+    const last = values.at(-1);
+    return typeof last === 'string' ? last : undefined;
+  };
+  let name: 'token' | 'refresh_token' | 'code';
+  if (path === '/oauth2/revoke') name = 'token';
+  else {
+    const raw = single('grant_type', true);
+    if (raw === null) return { ambiguous: true };
+    const grant = raw?.trim();
+    if (grant === 'refresh_token') name = 'refresh_token';
+    else if (grant === 'authorization_code') name = 'code';
+    else return undefined;
+  }
+  let value = single(name);
+  if (value === null) return { ambiguous: true };
+  // Revoke accepts the token with its authorization scheme ("Bearer R") and strips it.
+  if (name === 'token' && value) value = stripAccessTokenAuthorizationScheme(value);
+  if (!value) return undefined;
+  return name === 'code' ? { code: value } : { token: value };
+}
+/** pg_advisory_xact_lock takes a signed 64-bit key; keys are `user:<id>`, `code:<code>` or `token:<digest>`. */
+export const advisoryId = (key: string) => BigInt.asIntN(64, BigInt(`0x${digest(key).slice(0, 16)}`)).toString();
+/** PostgreSQL's lock_not_available (lock_timeout), or the pool's connection wait running out. */
+export const isLockBusy = (error: unknown) =>
+  (error as { code?: string } | null)?.code === '55P03' ||
+  /timeout exceeded when trying to connect|Connection terminated due to connection timeout/i.test(String((error as Error | null)?.message));
 
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
 /** Redirect URIs in a registration body; malformed JSON is left for Better Auth to reject. */
@@ -104,6 +160,8 @@ export async function createAccountApp(
   fetcher: typeof fetch = fetch,
   /** Catalog for the anonymous endpoint (see publicDependencies): documentation tools only, no subject, no USPTO keys. */
   publicDeps: CatalogDeps,
+  /** Test seams: a shorter lock wait, a smaller token-request budget or in-flight cap. */
+  tuning: { lockWaitMs?: number; tokenRequestLimit?: { rps: number; burst: number }; maxTokenChecksInFlight?: number } = {},
 ): Promise<{ app: express.Express; auth: Auth; mcp: ReturnType<typeof createMcpHandler>; close: () => Promise<void> }> {
   const app = express();
   app.disable('x-powered-by');
@@ -113,34 +171,36 @@ export async function createAccountApp(
   // header as "<client>, <edge>", so req.ip is its edge, shared by many users. The header the
   // proxy overwrites with the client address (Railway: x-real-ip) is used instead when set.
   const ipOf = (req: express.Request) => config.clientIpHeader ? clientIp(req, config.clientIpHeader) : req.ip;
+  // What every per-address limit counts by: an IPv6 /64 is one client, an IPv4-mapped address its IPv4.
+  const limitKey = (req: express.Request) => bucketKey(ipOf(req) ?? 'unknown');
   const auth = createAuth(config, store);
   await initializeAuth(auth, config, store);
-  // Each waiting token request holds a connection, so size this for concurrent token requests.
-  const locks = new Pool({ ...store.pool.options, max: 10, connectionTimeoutMillis: LOCK_WAIT_MS });
+  // Each waiting token request holds a connection (idle in transaction), so size this for
+  // concurrent token requests; a bounded wait keeps one stuck request from holding them all.
+  const lockWaitMs = tuning.lockWaitMs ?? LOCK_WAIT_MS;
+  const locks = new Pool({ ...store.pool.options, max: config.authLockPoolSize ?? 10, connectionTimeoutMillis: lockWaitMs });
   locks.on('error', () => log.error('account.auth_lock_connection_error'));
   /**
-   * The advisory lock for a /oauth2/token or /oauth2/revoke body: the owner of the presented
-   * refresh or access token, else the presented code or token itself (an unknown token
-   * changes nothing, and a code is single-use). Tokens are stored as digests of their value.
+   * The advisory lock for what `lockTarget` found: the owner of a presented refresh or access
+   * token, else the presented code or token itself (an unknown token changes nothing, and a code
+   * is single-use). Tokens are stored as digests of their value. Undefined when there is nothing
+   * to serialize, so such requests never queue behind each other on a shared key.
    */
-  const tokenLockId = async (body: Buffer | undefined) => {
-    let fields: Record<string, unknown> = {};
-    const text = body?.toString('utf8').trim() ?? '';
-    try { fields = text.startsWith('{') ? JSON.parse(text) : Object.fromEntries(new URLSearchParams(text)); }
-    catch { /* Better Auth rejects the malformed body; any lock id will do. */ }
-    const value = (name: string) => typeof fields[name] === 'string' ? fields[name] as string : undefined;
-    const token = value('refresh_token') ?? value('token');
-    let key = `code:${value('code') ?? ''}`;
-    if (token) {
+  const tokenLockId = async (target: LockTarget) => {
+    let key: string;
+    if (target && 'code' in target) key = `code:${target.code}`;
+    else if (target && 'token' in target) {
       const { adapter } = await auth.$context;
-      const where = [{ field: 'token', value: digest(token) }];
+      const where = [{ field: 'token', value: digest(target.token) }];
       const row = await adapter.findOne<{ userId?: string }>({ model: 'oauthRefreshToken', where })
         ?? await adapter.findOne<{ userId?: string }>({ model: 'oauthAccessToken', where });
-      key = row?.userId ? `user:${row.userId}` : `token:${digest(token)}`;
-    }
-    // pg_advisory_lock takes a signed 64-bit key.
-    return BigInt.asIntN(64, BigInt(`0x${digest(key).slice(0, 16)}`)).toString();
+      key = row?.userId ? `user:${row.userId}` : `token:${digest(target.token)}`;
+    } else return undefined;
+    return advisoryId(key);
   };
+  // Looking up the presented token costs database queries before any lock, and these routes skip
+  // the page limiter, so each address gets a bounded in-memory budget.
+  const tokenRequests = new IpRateLimiter(tuning.tokenRequestLimit?.rps ?? TOKEN_REQUEST_RPS, tuning.tokenRequestLimit?.burst ?? TOKEN_REQUEST_BURST);
   const mcp = createMcpHandler(
     ctx => buildMcpServer(deps, { subject: ctx.authInfo?.extra?.userId as string | undefined }),
     { legacy: 'stateless', maxSubscriptions: 0, maxRequestBodySize: MAX_REQUEST_BODY_BYTES, onerror: () => log.warn('account.mcp_handler_error') },
@@ -251,7 +311,7 @@ export async function createAccountApp(
     const platform =
       CROSS_ORIGIN_PATHS.test(req.path) &&
       (req.path !== ACCOUNT_MCP_PATH || !!bearerToken(req.headers.authorization));
-    if (!platform && !(await store.allow(`http:${ipOf(req)}`, 600, 60))) return tooMany(res);
+    if (!platform && !(await store.allow(`http:${limitKey(req)}`, 600, 60))) return tooMany(res);
     next();
   });
   const mcpNode = toNodeHandler(mcp, {
@@ -281,6 +341,8 @@ export async function createAccountApp(
   // Failed token checks per address (2 each second, bursts of 120): enough for the expired tokens
   // of many users behind one connector IP, far below the flood guard's 100 each second.
   const failedTokens = new IpRateLimiter(2, 120);
+  const tokenChecks = new Map<string, number>();
+  const maxTokenChecks = tuning.maxTokenChecksInFlight ?? MAX_TOKEN_CHECKS_IN_FLIGHT;
   // No body parser: the SDK reads the body (capped at MAX_REQUEST_BODY_BYTES, as in the base
   // transport) only after the token checks below pass.
   app.all(ACCOUNT_MCP_PATH, async (req, res) => {
@@ -295,40 +357,55 @@ export async function createAccountApp(
     const authorization = req.headers.authorization;
     const value = authorization && authorization.length <= 4096 ? bearerToken(authorization) : undefined;
     if (!value) return challenge(401, 'invalid_token');
-    const ip = ipOf(req) ?? 'unknown';
-    // Any bearer value skips the per-IP limit above, so tokens that fail the check below are
+    // Counted per address bucket: an IPv6 /64 is one client, however many addresses it uses.
+    const ip = limitKey(req);
+    // Any bearer value skips the per-IP limit above, so tokens that fail the checks below are
     // limited here, in memory: past the limit a made-up token costs no database round trip.
-    // Each check spends a token up front (concurrent requests cannot all pass) and a valid
-    // token gets it back.
-    if (!failedTokens.allow(ip)) return tooMany(res);
-    // A flood guard sized for a connector's shared IP; the per-user limit below does the real work.
-    if (!(await store.allow(`mcp-ip:${ip}`, 6000, 60))) return tooMany(res);
-    // Opaque tokens are checked against their hashed database row on every request, so
-    // revocation, client disabling, user deletion and loss of email verification apply immediately.
-    const context = await auth.$context;
-    const token = await context.adapter.findOne<AccessTokenRow>({
-      model: 'oauthAccessToken',
-      where: [{ field: 'token', value: digest(value) }],
-    });
-    if (
-      !token?.userId ||
-      token.revoked ||
-      !(new Date(token.expiresAt).getTime() > Date.now()) ||
-      !(token.resources ?? []).includes(resource)
-    )
+    // Only a token proven invalid spends the budget (a valid one, a database error or another
+    // limit does not), and a cap on checks in flight bounds what concurrent requests can do
+    // before their failures are counted.
+    if (!failedTokens.available(ip) || (tokenChecks.get(ip) ?? 0) >= maxTokenChecks) return tooMany(res);
+    const rejected = () => {
+      failedTokens.spend(ip);
       return challenge(401, 'invalid_token');
-    const [client, user] = await Promise.all([
-      context.adapter.findOne<{ disabled?: boolean | null }>({
-        model: 'oauthClient',
-        where: [{ field: 'clientId', value: token.clientId }],
-      }),
-      context.adapter.findOne<{ id: string; emailVerified?: boolean | null }>({
-        model: 'user',
-        where: [{ field: 'id', value: token.userId }],
-      }),
-    ]);
-    if (!client || client.disabled || !user?.emailVerified) return challenge(401, 'invalid_token');
-    failedTokens.refund(ip);
+    };
+    tokenChecks.set(ip, (tokenChecks.get(ip) ?? 0) + 1);
+    const checked = await (async () => {
+      // A flood guard sized for a connector's shared IP; the per-user limit below does the real work.
+      if (!(await store.allow(`mcp-ip:${ip}`, 6000, 60))) return void tooMany(res);
+      // Opaque tokens are checked against their hashed database row on every request, so
+      // revocation, client disabling, user deletion and loss of email verification apply immediately.
+      const context = await auth.$context;
+      const token = await context.adapter.findOne<AccessTokenRow>({
+        model: 'oauthAccessToken',
+        where: [{ field: 'token', value: digest(value) }],
+      });
+      if (
+        !token?.userId ||
+        token.revoked ||
+        !(new Date(token.expiresAt).getTime() > Date.now()) ||
+        !(token.resources ?? []).includes(resource)
+      )
+        return void rejected();
+      const [client, user] = await Promise.all([
+        context.adapter.findOne<{ disabled?: boolean | null }>({
+          model: 'oauthClient',
+          where: [{ field: 'clientId', value: token.clientId }],
+        }),
+        context.adapter.findOne<{ id: string; emailVerified?: boolean | null }>({
+          model: 'user',
+          where: [{ field: 'id', value: token.userId }],
+        }),
+      ]);
+      if (!client || client.disabled || !user?.emailVerified) return void rejected();
+      return { token, user };
+    })().finally(() => {
+      const left = (tokenChecks.get(ip) ?? 1) - 1;
+      if (left > 0) tokenChecks.set(ip, left);
+      else tokenChecks.delete(ip);
+    });
+    if (!checked) return;
+    const { token, user } = checked;
     if (!(token.scopes ?? []).includes('uspto:read')) return challenge(403, 'insufficient_scope');
     if (!(await store.allow(`mcp-user:${user.id}`, 600, 60))) return tooMany(res);
     const day = new Date().toISOString().slice(0, 10);
@@ -439,20 +516,34 @@ export async function createAccountApp(
       // lock per user and a code exchange locks per code: unrelated users never queue together.
       // A code exchange can still overlap a family wipe for the same user; at worst that new
       // authorization is revoked and the user authorizes again.
-      const lockId = await tokenLockId(Buffer.isBuffer(body) ? body : undefined);
-      const lock = await locks.connect();
+      if (!tokenRequests.allow(limitKey(req))) return tooMany(res);
+      const target = await lockTarget(req.path, req.get('content-type'), Buffer.isBuffer(body) ? body : undefined);
+      if (target && 'ambiguous' in target)
+        return res.status(400).json({ error: 'invalid_request', error_description: 'The request body is ambiguous or cannot be parsed.' });
+      const lockId = await tokenLockId(target);
+      if (lockId === undefined) return execute();
+      // Too busy to take the lock in time: the client should retry, not see a server fault.
+      const busy = () => res.status(503).set('Retry-After', '5').json({ error: 'temporarily_unavailable', error_description: 'Try again shortly.' });
+      const lock = await locks.connect().catch((error: unknown) => {
+        if (isLockBusy(error)) return undefined;
+        throw error;
+      });
+      if (!lock) return busy();
       // A transaction-scoped lock is released by COMMIT or ROLLBACK, and a bounded wait keeps one
       // stuck request from holding every lock connection and queueing all users' token requests.
       let broken = false;
+      let locked = false;
       try {
         await lock.query('BEGIN');
-        await lock.query(`SET LOCAL lock_timeout = '${LOCK_WAIT_MS}ms'`);
+        await lock.query(`SET LOCAL lock_timeout = '${lockWaitMs}ms'`);
         await lock.query('SELECT pg_advisory_xact_lock($1)', [lockId]);
+        locked = true;
         await execute();
         await lock.query('COMMIT');
       } catch (error) {
         // A connection that cannot roll back may still hold the lock; discard it.
         await lock.query('ROLLBACK').catch(() => { broken = true; });
+        if (!locked && isLockBusy(error)) return busy();
         throw error;
       } finally {
         lock.release(broken);

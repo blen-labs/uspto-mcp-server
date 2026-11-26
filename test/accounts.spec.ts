@@ -12,7 +12,7 @@ import { MockAgent } from 'undici';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { Keyring, randomToken, digest } from '../src/accounts/crypto.js';
 import { Store, personalOwner, type KeyKind } from '../src/accounts/store.js';
-import { createAccountApp, allowedRedirect } from '../src/accounts/app.js';
+import { createAccountApp, allowedRedirect, lockTarget, advisoryId } from '../src/accounts/app.js';
 import { accountDependencies, publicDependencies } from '../src/accounts/runtime.js';
 import { loadAccountConfig, type AccountConfig } from '../src/accounts/config.js';
 import { checkKey } from '../src/accounts/portal.js';
@@ -197,6 +197,7 @@ const database = process.env.TEST_DATABASE_URL;
 describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
   let pool: Pool, store: CountingStore, server: Server, config: AccountConfig, docsRoot: string;
   let service: Awaited<ReturnType<typeof createAccountApp>>;
+  let startReplica: (tuning?: Parameters<typeof createAccountApp>[5], overrides?: Partial<AccountConfig>, replicaStore?: Store) => ReturnType<typeof createAccountApp>;
   let helper: ReturnType<ReturnType<typeof testUtils>['init']>['context']['test'];
   let alice: any, bob: any, browser: typeof fetch, other: typeof fetch;
   let validationStatus = 200;
@@ -322,6 +323,8 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     const publicDeps = publicDependencies(await buildSupervisor(cfg), config.origin); // cfg HAS a shared key: it must stay unused
     service = await createAccountApp(config, store, accountDependencies(deps, cfg, store, mock), claudeFetch, publicDeps);
     server.on('request', service.app);
+    startReplica = (tuning, overrides, replicaStore) =>
+      createAccountApp({ ...config, ...overrides }, replicaStore ?? store, accountDependencies(deps, cfg, store, mock), claudeFetch, publicDeps, tuning);
     helper = testUtils().init((await service.auth.$context) as unknown as Parameters<ReturnType<typeof testUtils>['init']>[0]).context.test;
     alice = await helper.saveUser(helper.createUser({ email: 'alice@example.test', emailVerified: true }));
     bob = await helper.saveUser(helper.createUser({ email: 'bob@example.test', emailVerified: true }));
@@ -534,8 +537,9 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
   it('limits failed token checks per IP before they reach the database', async () => {
     const bucket = async (key: string) => (await pool.query('SELECT count FROM request_limits WHERE bucket=$1', [digest(key)])).rows[0]?.count;
     const post = (ip: string) => fetch(`${config.origin}/mcp/account`, { method: 'POST', headers: { authorization: 'Bearer made-up', 'x-real-ip': ip } });
-    const statuses = await Promise.all(Array.from({ length: 125 }, () => post('192.0.2.44').then(r => r.status)));
-    // Sent at once, so a check that charged only after the database lookup would let all through.
+    // Failures are counted once a token is proven invalid, so send them in small concurrent waves.
+    const statuses: number[] = [];
+    for (let wave = 0; wave < 26; wave++) statuses.push(...await Promise.all(Array.from({ length: 5 }, () => post('192.0.2.44').then(r => r.status))));
     expect(statuses.filter(s => s === 401).length).toBeGreaterThanOrEqual(120);
     expect(statuses.filter(s => s === 429).length).toBeGreaterThan(0);
     // Refused before the flood guard's database upsert, so only requests the limiter let through
@@ -876,4 +880,290 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     expect(revoke.status).toBe(200); expect((await mcp(refreshed.access_token)).status).toBe(401);
     expect((await exchange(a.clientId, { grant_type: 'refresh_token', refresh_token: a.refresh_token })).status).toBe(400);
   });
+  /** Serves the test server from another replica of the account app until `fn` finishes. */
+  async function withReplica<T>(replica: Awaited<ReturnType<typeof createAccountApp>>, fn: () => Promise<T>): Promise<T> {
+    server.removeListener('request', service.app); server.on('request', replica.app);
+    try { return await fn(); }
+    finally { server.removeListener('request', replica.app); server.on('request', service.app); await replica.close(); }
+  }
+  /** Holds one advisory lock on its own connection while `run` is in flight. */
+  async function holding<T extends { status: number }>(id: string, run: () => Promise<T>, waitMs = 400) {
+    const hold = await pool.connect();
+    try {
+      await hold.query('BEGIN'); await hold.query('SELECT pg_advisory_xact_lock($1)', [id]);
+      const pending = run();
+      const waits = await Promise.race([pending.then(() => false), new Promise<boolean>(r => setTimeout(r, waitMs, true))]);
+      await hold.query('COMMIT');
+      return { waits, response: await pending };
+    } finally { await hold.query('ROLLBACK').catch(() => undefined); hold.release(); }
+  }
+  const FORM = { 'content-type': 'application/x-www-form-urlencoded' };
+  const oauthPost = (path: string, body: string | URLSearchParams, headers: Record<string, string> = FORM) =>
+    fetch(`${config.origin}/api/auth/oauth2/${path}`, { method: 'POST', headers, body });
+  const form = (fields: Record<string, string>) => new URLSearchParams(fields).toString();
+  const advisoryHeld = async () => Number((await pool.query("SELECT count(*) FROM pg_locks WHERE locktype='advisory' AND granted AND pid<>pg_backend_pid()")).rows[0].count);
+
+  it('locks the operation Better Auth runs, parsed as it parses the body', async () => {
+    const user = advisoryId(`user:${alice.id}`);
+    const waitsAndSucceeds = async (id: string, run: () => Promise<Response>, label: string) => {
+      const { waits, response } = await holding(id, run);
+      expect(waits, `${label} must wait for its lock`).toBe(true);
+      expect(response.status, `${label}: ${await response.clone().text()}`).toBe(200);
+      return response;
+    };
+    // Revoke acts on `token`, wherever decoy refresh_token fields appear.
+    const first = await token();
+    await waitsAndSucceeds(user, () => oauthPost('revoke', `refresh_token=junk&${form({ client_id: first.clientId, token: first.refresh_token })}&refresh_token=junk2`), 'revoke by token');
+    // ...and with its authorization scheme, which Better Auth strips.
+    const second = await token();
+    await waitsAndSucceeds(user, () => oauthPost('revoke', form({ client_id: second.clientId, token: `Bearer ${second.access_token}`, token_type_hint: 'access_token' })), 'revoke with Bearer scheme');
+    // A refresh grant locks on refresh_token even behind a `{}`-prefixed pair (a JSON sniffer's trap),
+    // extra fields, a padded grant_type and a harmless repeat of the same value.
+    const third = await token();
+    const refreshed = await (await waitsAndSucceeds(user, () => oauthPost('token', `{}=1&token=junk&code=junk&${form({ client_id: third.clientId, grant_type: ' refresh_token ', refresh_token: third.refresh_token })}`), 'refresh grant')).json() as any;
+    // A harmless repeat of the same value is still locked on.
+    const repeated = await token();
+    expect((await holding(user, () => oauthPost('token', `${form({ client_id: repeated.clientId, grant_type: 'refresh_token', refresh_token: repeated.refresh_token })}&refresh_token=${repeated.refresh_token}`))).waits).toBe(true);
+    // The lock is chosen with the parser Better Auth uses, so a BOM is handled exactly as it handles it.
+    const bomRefresh = ((await (await waitsAndSucceeds(user, () => oauthPost('token', `\uFEFF${form({ client_id: third.clientId, grant_type: 'refresh_token', refresh_token: refreshed.refresh_token })}`), 'BOM-prefixed refresh grant')).json()) as any).refresh_token as string;
+    const bomFirst = await holding(user, () => oauthPost('token', `\uFEFF${form({ grant_type: 'refresh_token', client_id: third.clientId, refresh_token: bomRefresh })}`));
+    // Whatever this runtime's parser does with the BOM, an accepted request never runs unlocked.
+    expect(bomFirst.response.status === 200 ? bomFirst.waits : true).toBe(true);
+    expect(bomFirst.response.status).toBeLessThan(500);
+    // A code exchange locks on its code, never on a stray refresh_token.
+    const flow = await authorize();
+    await waitsAndSucceeds(advisoryId(`code:${flow.code}`), () => oauthPost('token', form({ client_id: flow.client.client_id, grant_type: 'authorization_code', code: flow.code!, code_verifier: flow.verifier, redirect_uri: flow.client.redirect_uris[0], refresh_token: 'junk' })), 'code exchange');
+    // Requests with nothing to lock do not wait, whatever lock is held: not on the user's...
+    const fourth = await token(); const client = fourth.clientId;
+    for (const [label, run] of [
+      ['client_credentials with a refresh_token', () => oauthPost('token', form({ client_id: client, grant_type: 'client_credentials', refresh_token: fourth.refresh_token }))],
+      ['no grant_type', () => oauthPost('token', form({ client_id: client, refresh_token: fourth.refresh_token }))],
+      ['refresh grant without a token', () => oauthPost('token', form({ client_id: client, grant_type: 'refresh_token', token: fourth.refresh_token }))],
+      ['revoke by refresh_token only', () => oauthPost('revoke', form({ client_id: client, refresh_token: fourth.refresh_token }))],
+      ['JSON body', () => oauthPost('token', JSON.stringify({ grant_type: 'refresh_token', refresh_token: fourth.refresh_token }), { 'content-type': 'application/json' })],
+      ['no content type', () => fetch(`${config.origin}/api/auth/oauth2/token`, { method: 'POST', body: Buffer.from(form({ grant_type: 'refresh_token', refresh_token: fourth.refresh_token })) })],
+    ] as const) {
+      const { waits, response } = await holding(user, run, 300);
+      expect(waits, `${label} must not take the user's lock`).toBe(false);
+      expect(response.status, label).toBeLessThan(500);
+    }
+    // ...and not on the old shared `code:` key either.
+    const shared = await holding(advisoryId('code:'), () => oauthPost('token', form({ client_id: client, grant_type: 'authorization_code' })), 300);
+    expect(shared.waits).toBe(false);
+    expect(shared.response.status).toBeLessThan(500);
+    // The refresh token the decoys never touched still works.
+    expect((await exchange(client, { grant_type: 'refresh_token', refresh_token: fourth.refresh_token })).status).toBe(200);
+  });
+  it('every accepted refresh, revoke and code exchange takes its lock, including leading-? bodies', async () => {
+    const user = advisoryId(`user:${alice.id}`);
+    // Whether this runtime's form parser keeps or drops a leading '?', a request Better Auth accepts
+    // must have waited for the lock it was chosen with: never 200 without waiting.
+    const accepted = async (label: string, id: string, run: () => Promise<Response>) => {
+      const { waits, response } = await holding(id, run);
+      expect(response.status, label).toBeLessThan(500);
+      if (response.status === 200) expect(waits, `${label} ran without its lock`).toBe(true);
+      return response.status;
+    };
+    let ran = 0;
+    for (const variant of [
+      (c: string, r: string) => `?${form({ grant_type: 'refresh_token', refresh_token: r, client_id: c })}`,
+      (c: string, r: string) => `?${form({ refresh_token: r, grant_type: 'refresh_token', client_id: c })}`,
+      (c: string, r: string) => `?a=1&${form({ grant_type: 'refresh_token', refresh_token: r, client_id: c })}`,
+      (c: string, r: string) => form({ grant_type: 'refresh_token', refresh_token: r, client_id: c }),
+    ]) {
+      const t = await token();
+      if (await accepted(`refresh ${variant('C', 'R')}`, user, () => oauthPost('token', variant(t.clientId, t.refresh_token))) === 200) ran++;
+    }
+    for (const variant of [
+      (c: string, r: string) => `?${form({ token: `Bearer ${r}`, client_id: c })}`,
+      (c: string, r: string) => `?${form({ token: r, client_id: c })}`,
+      (c: string, r: string) => form({ token: r, client_id: c }),
+    ]) {
+      const t = await token();
+      if (await accepted(`revoke ${variant('C', 'R')}`, user, () => oauthPost('revoke', variant(t.clientId, t.refresh_token))) === 200) ran++;
+    }
+    const flow = await authorize();
+    const fields = { code: flow.code!, grant_type: 'authorization_code', code_verifier: flow.verifier, redirect_uri: flow.client.redirect_uris[0], client_id: flow.client.client_id };
+    if (await accepted('code exchange with leading ?', advisoryId(`code:${flow.code}`), () => oauthPost('token', `?${form(fields)}`)) === 200) ran++;
+    // The unprefixed forms are accepted on every runtime, so at least those ran under their lock.
+    expect(ran).toBeGreaterThanOrEqual(2);
+  });
+  it('refuses conflicting repeats of the grant or the chosen field, before any lock or Better Auth', async () => {
+    const a = await token();
+    const user = advisoryId(`user:${alice.id}`);
+    const flow = await authorize();
+    const base = { client_id: a.clientId };
+    const cases: [string, string, string][] = [
+      ['token', 'revoke', `${form({ ...base, token: 'a' })}&token=b`],
+      ['token', 'refresh_token', `${form({ ...base, grant_type: 'refresh_token', refresh_token: a.refresh_token })}&refresh_token=other`],
+      ['token', 'code', `${form({ ...base, grant_type: 'authorization_code', code: flow.code! })}&code=other`],
+      // The repeated grant would otherwise run an unlocked grant while another is locked for.
+      ['token', 'grant_type', `${form({ ...base, grant_type: 'client_credentials' })}&grant_type=refresh_token&refresh_token=${a.refresh_token}`],
+      ['token', 'grant_type last', `${form({ ...base, grant_type: 'refresh_token', refresh_token: a.refresh_token })}&grant_type=client_credentials`],
+    ];
+    for (const [path, label, body] of cases) {
+      const { waits, response } = await holding(user, () => oauthPost(label === 'revoke' ? 'revoke' : path, body), 300);
+      expect(waits, label).toBe(false);
+      expect(response.status, label).toBe(400);
+      expect((await response.json() as any).error, label).toBe('invalid_request');
+    }
+    // The token survived all of those.
+    expect((await exchange(a.clientId, { grant_type: 'refresh_token', refresh_token: a.refresh_token })).status).toBe(200);
+  });
+  it('parses lock targets the way Better Auth reads token and revoke bodies', async () => {
+    const f = 'application/x-www-form-urlencoded';
+    const body = (s: string) => Buffer.from(s);
+    expect(await lockTarget('/oauth2/token', f, body('grant_type=refresh_token&refresh_token=R&token=T&code=C'))).toEqual({ token: 'R' });
+    expect(await lockTarget('/oauth2/token', `${f}; charset=UTF-8`, body('grant_type=%20authorization_code%20&code=C&refresh_token=R'))).toEqual({ code: 'C' });
+    expect(await lockTarget('/oauth2/token', f.toUpperCase(), body('grant_type=refresh_token&refresh_token=R'))).toEqual({ token: 'R' });
+    expect(await lockTarget('/oauth2/revoke', f, body('refresh_token=R&token=Bearer%20T&grant_type=refresh_token'))).toEqual({ token: 'T' });
+    expect(await lockTarget('/oauth2/token', f, body('refresh_token=R&grant_type=refresh_token&refresh_token=R'))).toEqual({ token: 'R' });
+    expect(await lockTarget('/oauth2/token', f, body('grant_type=refresh_token&refresh_token=R&refresh_token=S'))).toEqual({ ambiguous: true });
+    expect(await lockTarget('/oauth2/token', f, body('grant_type=refresh_token&grant_type=authorization_code'))).toEqual({ ambiguous: true });
+    expect(await lockTarget('/oauth2/revoke', f, body('token=a&token=b'))).toEqual({ ambiguous: true });
+    // grant_type repeats are compared after trimming, as Better Auth trims before dispatching.
+    expect(await lockTarget('/oauth2/token', f, body('grant_type=refresh_token&grant_type=%20refresh_token%20&refresh_token=R'))).toEqual({ token: 'R' });
+    expect(await lockTarget('/oauth2/token', f, body('grant_type=refresh_token&?refresh_token=R'))).toBeUndefined();
+    for (const none of await Promise.all([
+      lockTarget('/oauth2/token', f, body('grant_type=client_credentials&refresh_token=R&code=C')),
+      lockTarget('/oauth2/token', f, body('refresh_token=R')),
+      lockTarget('/oauth2/token', f, body('grant_type=refresh_token')),
+      lockTarget('/oauth2/token', f, body('grant_type=refresh_token&refresh_token=')),
+      lockTarget('/oauth2/token', f, body('grant_type=refresh_token&token=T')),
+      lockTarget('/oauth2/revoke', f, body('refresh_token=R')),
+      lockTarget('/oauth2/revoke', f, body('token=')),
+      lockTarget('/oauth2/token', 'application/json', body('{"grant_type":"refresh_token","refresh_token":"R"}')),
+      lockTarget('/oauth2/token', undefined, body('grant_type=refresh_token&refresh_token=R')),
+      lockTarget('/oauth2/token', f, undefined),
+    ])) expect(none).toBeUndefined();
+  });
+  it('serializes concurrent refreshes of one grant: exactly one wins', async () => {
+    const a = await token();
+    const statuses = (await Promise.all(Array.from({ length: 6 }, () => exchange(a.clientId, { grant_type: 'refresh_token', refresh_token: a.refresh_token })))).map(r => r.status);
+    expect(statuses.sort()).toEqual([200, 400, 400, 400, 400, 400]);
+    expect(await advisoryHeld()).toBe(0);
+  });
+  it('limits token and revoke requests per IP (IPv6 by /64) before any lookup or lock', async () => {
+    const a = await token();
+    const user = advisoryId(`user:${alice.id}`);
+    await withReplica(await startReplica({ tokenRequestLimit: { rps: 0.001, burst: 3 }, lockWaitMs: 300 }), async () => {
+      const post = (path: string, ip: string, fields: Record<string, string>) =>
+        fetch(`${config.origin}/api/auth/oauth2/${path}`, { method: 'POST', headers: { 'x-real-ip': ip }, body: new URLSearchParams({ client_id: a.clientId, ...fields }) }).then(r => r.status);
+      const refresh = (ip: string) => post('token', ip, { grant_type: 'refresh_token', refresh_token: 'unknown' });
+      const statuses: number[] = [];
+      for (let i = 0; i < 6; i++) statuses.push(await refresh('192.0.2.131'));
+      expect(statuses.slice(3)).toEqual([429, 429, 429]);
+      expect(statuses.slice(0, 3).every(x => x !== 429)).toBe(true);
+      expect(await post('revoke', '192.0.2.131', { token: 'x' })).toBe(429);
+      expect(await post('revoke', '192.0.2.132', { token: 'x' })).not.toBe(429);
+      // Every address of one /64 shares a bucket, and an IPv4-mapped address is its IPv4.
+      const v6 = ['2001:db8:1:2::1', '2001:db8:1:2:aaaa::2', '2001:DB8:1:2:0:0:0:3'];
+      expect(await Promise.all(v6.map(ip => refresh(ip)))).not.toContain(429);
+      expect(await refresh('2001:db8:1:2:ffff:ffff:ffff:ffff')).toBe(429);
+      expect(await refresh('2001:db8:1:3::1')).not.toBe(429);
+      expect(await refresh('::ffff:192.0.2.131')).toBe(429);
+      // Over budget is answered before the token lookup or the lock: a held user lock does not delay it.
+      const hold = await pool.connect();
+      try {
+        await hold.query('BEGIN'); await hold.query('SELECT pg_advisory_xact_lock($1)', [user]);
+        const started = Date.now();
+        expect(await post('token', '192.0.2.131', { grant_type: 'refresh_token', refresh_token: a.refresh_token })).toBe(429);
+        expect(Date.now() - started).toBeLessThan(250);
+      } finally { await hold.query('ROLLBACK').catch(() => undefined); hold.release(); }
+    });
+  });
+  it('spends the failed-token budget only on tokens proven invalid', async () => {
+    const valid = (await token()).access_token;
+    const post = (token: string, ip: string) => fetch(`${config.origin}/mcp/account`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'x-real-ip': ip } }).then(r => r.status);
+    const forgedBurst = (ip: string, n = 125) => Promise.all(Array.from({ length: n }, () => post('made-up', ip)));
+    const full = (statuses: number[]) => statuses.filter(s => s === 401).length >= 120;
+    // Valid tokens cost nothing, however many and however fast: the budget is still whole afterwards.
+    const ok = new Set<number>();
+    for (let i = 0; i < 130; i++) ok.add(await post(valid, '192.0.2.120'));
+    expect(ok.has(429) || ok.has(401)).toBe(false);
+    expect(full(await forgedBurst('192.0.2.120'))).toBe(true);
+    // An early 429 (the flood guard) costs nothing either.
+    await pool.query("INSERT INTO request_limits(bucket,count,expires_at) VALUES($1,6000,now()+interval '1 hour')", [digest('mcp-ip:192.0.2.121')]);
+    expect(new Set(await forgedBurst('192.0.2.121', 130))).toEqual(new Set([429]));
+    await pool.query('DELETE FROM request_limits WHERE bucket=$1', [digest('mcp-ip:192.0.2.121')]);
+    expect(full(await forgedBurst('192.0.2.121'))).toBe(true);
+    // As does a database error.
+    class FlakyStore extends Store { fail = false; override async allow(bucket: string, max: number, seconds: number) { if (this.fail) throw new Error('database unavailable'); return super.allow(bucket, max, seconds); } }
+    const flaky = new FlakyStore(pool, new Keyring('v1', { v1: randomBytes(32) }));
+    await withReplica(await startReplica(undefined, undefined, flaky), async () => {
+      flaky.fail = true;
+      expect(new Set(await forgedBurst('192.0.2.122', 130))).toEqual(new Set([500]));
+      flaky.fail = false;
+      expect(full(await forgedBurst('192.0.2.122'))).toBe(true);
+    });
+    // Counting is per /64 for IPv6, in the budget and in the in-flight cap.
+    let blocked = false;
+    for (let wave = 0; wave < 30 && !blocked; wave++) {
+      const statuses = await Promise.all(Array.from({ length: 10 }, (_, i) => post('made-up', `2001:db8:7:7:${(wave * 10 + i + 1).toString(16)}::1`)));
+      blocked = statuses.includes(429);
+    }
+    expect(blocked, 'failures from many addresses of one /64 must exhaust one budget').toBe(true);
+    expect(await post('made-up', '2001:db8:7:7:ffff:ffff::9')).toBe(429);
+    expect(await post('made-up', '2001:db8:7:8::1')).toBe(401);
+    await withReplica(await startReplica({ maxTokenChecksInFlight: 3 }), async () => {
+      const mixed = await Promise.all(Array.from({ length: 30 }, (_, i) => post('made-up', `2001:db8:9:9:${(i + 1).toString(16)}::1`)));
+      expect(mixed).toContain(429);
+      expect(mixed).toContain(401);
+      // The counters drain: afterwards the same bucket is served again, and other /64s were never affected.
+      expect(await post('made-up', '2001:db8:9:9::5')).toBe(401);
+      const other = await Promise.all(Array.from({ length: 3 }, () => post('made-up', '2001:db8:9:a::1')));
+      expect(other).toEqual([401, 401, 401]);
+    });
+  });
+  it('answers 503 with Retry-After, rolls back and releases the connection when a lock wait times out', async () => {
+    const a = await token();
+    const user = advisoryId(`user:${alice.id}`);
+    await withReplica(await startReplica({ lockWaitMs: 300 }), async () => {
+      const hold = await pool.connect();
+      try {
+        await hold.query('BEGIN'); await hold.query('SELECT pg_advisory_xact_lock($1)', [user]);
+        const started = Date.now();
+        const waited = await exchange(a.clientId, { grant_type: 'refresh_token', refresh_token: a.refresh_token });
+        expect(waited.status).toBe(503);
+        expect(waited.headers.get('retry-after')).toBe('5');
+        expect((await waited.json() as any).error).toBe('temporarily_unavailable');
+        expect(Date.now() - started).toBeLessThan(5000);
+        // Nothing of the timed-out request is left in a transaction.
+        const idle = await pool.query("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND state LIKE 'idle in transaction%' AND pid<>pg_backend_pid() AND pid<>$1", [(await hold.query('SELECT pg_backend_pid() AS pid')).rows[0].pid]);
+        expect(Number(idle.rows[0].count)).toBe(0);
+      } finally { await hold.query('ROLLBACK').catch(() => undefined); hold.release(); }
+      // The released connection holds no lock, and the grant was not consumed: it still works.
+      expect(await advisoryHeld()).toBe(0);
+      const after = await exchange(a.clientId, { grant_type: 'refresh_token', refresh_token: a.refresh_token });
+      expect(after.status, await after.clone().text()).toBe(200);
+    });
+  });
+  it('sizes the lock pool from AUTH_LOCK_POOL_SIZE and answers 503 when no lock connection frees up', async () => {
+    const a = await token();
+    const user = advisoryId(`user:${alice.id}`);
+    await withReplica(await startReplica({ lockWaitMs: 1500 }, { authLockPoolSize: 2 }), async () => {
+      const hold = await pool.connect();
+      try {
+        await hold.query('BEGIN'); await hold.query('SELECT pg_advisory_xact_lock($1)', [user]);
+        const refresh = () => exchange(a.clientId, { grant_type: 'refresh_token', refresh_token: a.refresh_token });
+        const pending = [refresh(), refresh(), refresh(), refresh()];
+        await new Promise(r => setTimeout(r, 500));
+        // Two pool connections are parked on the lock; the other requests wait for a connection.
+        const waiting = await pool.query("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%pg_advisory_xact_lock%' AND pid<>pg_backend_pid()");
+        expect(Number(waiting.rows[0].count)).toBe(2);
+        const statuses = (await Promise.all(pending)).map(r => r.status);
+        expect(statuses).toEqual([503, 503, 503, 503]);
+      } finally { await hold.query('ROLLBACK').catch(() => undefined); hold.release(); }
+      expect((await exchange(a.clientId, { grant_type: 'refresh_token', refresh_token: a.refresh_token })).status).toBe(200);
+    });
+    expect(await advisoryHeld()).toBe(0);
+  });
+  it('reads AUTH_LOCK_POOL_SIZE as an integer from 2 to 200, default unset', () => {
+    const env = { USPTO_PUBLIC_ORIGIN: 'https://example.com', BETTER_AUTH_SECRET: 's'.repeat(32), ENCRYPTION_KEYS_JSON: JSON.stringify({ k: randomBytes(32).toString('base64') }),
+      ENCRYPTION_ACTIVE_KEY_ID: 'k', DATABASE_URL: 'postgresql://x', GOOGLE_CLIENT_ID: 'id', GOOGLE_CLIENT_SECRET: 'secret' };
+    expect(loadAccountConfig(env).authLockPoolSize).toBeUndefined();
+    expect(loadAccountConfig({ ...env, AUTH_LOCK_POOL_SIZE: ' 25 ' }).authLockPoolSize).toBe(25);
+    for (const bad of ['1', '201', '2.5', 'abc', '-3']) expect(() => loadAccountConfig({ ...env, AUTH_LOCK_POOL_SIZE: bad }), bad).toThrow(/AUTH_LOCK_POOL_SIZE/);
+  });
+
 });

@@ -66,6 +66,7 @@ Never deploy with `--insecure`: it disables authentication.
 | `USPTO_IP_RPS` | `5` (token-bucket sustained rate per IP) |
 | `USPTO_IP_BURST` | `20` (token-bucket burst per IP) |
 | `USPTO_CLIENT_IP_HEADER` | unset. **Set to `x-real-ip` on Railway**: the edge overwrites it with the client address, while the app's TCP peer is an internal proxy address that changes per connection. |
+| `AUTH_LOCK_POOL_SIZE` | `10` (2 to 200): connections per replica reserved for OAuth token locks, on top of the main pool; budget `replicas x (pool + this)` against Postgres `max_connections`. Each waiting token request sits `idle in transaction` up to 10 s, so keep the role's `idle_in_transaction_session_timeout` above that. A lock wait that times out answers 503 with `Retry-After`. |
 | `USPTO_SUBJECT_DAILY_QUOTA` | `10000` requests per authenticated subject per day |
 | `USPTO_CACHE_TTL_MS` | `600000` (10 min upstream LRU) |
 | `USPTO_UPSTREAM_TIMEOUT_MS` | `30000` |
