@@ -367,7 +367,7 @@ export async function createAccountApp(
   const legacySlots = new Slots(maxLegacyChecks);
   // The legacy path's own failure budget, as large as its in-flight cap so valid legacy users keep the
   // concurrency they had; junk still spends credits at 2 a second once the burst is used.
-  const failedTokens = new IpRateLimiter(FAILED_TOKEN_RPS, maxLegacyChecks);
+  const failedTokens = new IpRateLimiter(FAILED_TOKEN_RPS, maxLegacyChecks, now);
   // No body parser: the SDK reads the body (capped at MAX_REQUEST_BODY_BYTES, as in the base
   // transport) only after the token checks below pass.
   app.all(ACCOUNT_MCP_PATH, async (req, res) => {
