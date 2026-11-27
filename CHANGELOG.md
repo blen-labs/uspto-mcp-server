@@ -5,6 +5,12 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-11-27
+
+### Fixed
+- refuse a zone id in the trusted client-address header (security)
+- key the rate limiter only on a literal client address from the trusted header (security)
+
 ## [0.5.1] - 2026-11-27
 
 ### Changed
@@ -298,7 +304,8 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 - Docker image (Node 24 + Deno), an MCPB bundle (manifest v0.4) that prompts for keys, and
   third-party license notices in every artifact.
 
-[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.5...v0.5.0
 [0.4.5]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.4...v0.4.5
