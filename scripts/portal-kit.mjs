@@ -34,9 +34,9 @@ export function hashes(root = '.') {
   );
 }
 
-/** The HEAD commit of the repository this runs in. */
-export function headCommit() {
-  return execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+/** The HEAD commit of the repository at `root`, the same directory the manifest and kit files are read from. */
+export function headCommit(root = '.') {
+  return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
 }
 
 /** Differences between the files on disk and the manifest, as readable lines. */
