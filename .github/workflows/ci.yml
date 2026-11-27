@@ -155,8 +155,13 @@ jobs:
           docker run -d --name smoke -p 127.0.0.1:8080:8080 -e USPTO_PUBLIC_ORIGIN=http://127.0.0.1:8080 uspto-mcp:ci node dist/bin.js --http --insecure --host 0.0.0.0 --sandbox deno
           for _ in $(seq 1 20); do curl -fsS http://127.0.0.1:8080/health && break; sleep 1; done
           curl -fsS http://127.0.0.1:8080/health | grep -q '"sandbox":"deno"'
-          curl -fsS -X POST http://127.0.0.1:8080/mcp -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -H 'mcp-protocol-version: 2025-06-18' \
-            -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"execute","arguments":{"code":"return 1 + 41"}}}' | grep -q '"value":42'
+          # MCP 2026-07-28: stateless, `_meta` envelope in the body, routing headers mirroring it.
+          curl -fsS -X POST http://127.0.0.1:8080/mcp -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
+            -H 'mcp-protocol-version: 2026-07-28' -H 'mcp-method: tools/call' -H 'mcp-name: execute' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"execute","arguments":{"code":"return 1 + 41"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"ci-smoke","version":"0"},"io.modelcontextprotocol/clientCapabilities":{}}}}' | grep -q '"value":42'
+          # Pre-2026 clients still get an initialize handshake.
+          curl -fsS -X POST http://127.0.0.1:8080/mcp -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci-smoke-legacy","version":"0"}}}' | grep -q '"protocolVersion"'
           docker rm -f smoke
 
   conventional-commits:
