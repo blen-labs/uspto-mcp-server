@@ -40,7 +40,7 @@ export interface HttpOptions {
   allowedOrigins?: string[];
   /** Public origin clients should use (for protected-resource metadata). */
   publicOrigin?: string;
-  /** What `/health` reports as running; read from the platform environment at startup when omitted. */
+  /** What `/health` reports as running; bin.ts reads it from the platform environment at startup. Omitted: this version with no commit. */
   buildInfo?: BuildInfo;
 }
 
@@ -94,7 +94,7 @@ function subjectOf(ctx: McpRequestContext): string | undefined {
 const isLoopbackHost = (host: string) => ['localhost', '127.0.0.1', '::1', '[::1]'].includes(host.toLowerCase());
 
 export async function startHttp(deps: CatalogDeps, opts: HttpOptions): Promise<HttpHandle> {
-  const buildInfo = opts.buildInfo ?? readBuildInfo();
+  const buildInfo = opts.buildInfo ?? readBuildInfo({});
   const verifier = buildVerifier(opts.auth);
   if (!verifier && !opts.insecure) {
     throw new AuthConfigError('--http needs authentication: set USPTO_AUTH_PROVIDER (generic-oidc, clerk, workos, auth0) with USPTO_AUTH_ISSUER, USPTO_AUTH_AUDIENCE and USPTO_AUTH_JWKS_URL, use USPTO_AUTH_PROVIDER=accounts, or pass --insecure for an unauthenticated local server.');

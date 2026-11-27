@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { startStdio } from './server/stdio.js';
 import { startHttp, type HttpHandle } from './server/http.js';
+import { readBuildInfo } from './server/buildInfo.js';
 import { SERVER_VERSION } from './server/mcpServer.js';
 import { buildSupervisor, EXECUTION_DEFAULTS, LIMIT_DEFAULTS, type KeyedLimits, type SupervisorConfig } from './supervisor/index.js';
 import { ODP_BASE_URL } from './sdk/sources/odp.js';
@@ -174,7 +175,7 @@ async function main(): Promise<void> {
   if (accounts) {
     const { loadAccountConfig } = await import('./accounts/config.js');
     const { startAccountHttp } = await import('./accounts/runtime.js');
-    handle = await startAccountHttp(deps, cfg, loadAccountConfig(process.env), args.port, args.host);
+    handle = await startAccountHttp(deps, cfg, loadAccountConfig(process.env), args.port, args.host, readBuildInfo(process.env));
   } else if (args.http) {
     const allowedOrigins = process.env.USPTO_ALLOWED_ORIGINS
       ? process.env.USPTO_ALLOWED_ORIGINS.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
@@ -203,6 +204,7 @@ async function main(): Promise<void> {
       allowedHosts,
       allowedOrigins,
       publicOrigin: process.env.USPTO_PUBLIC_ORIGIN,
+      buildInfo: readBuildInfo(process.env),
       auth: {
         // An empty value (as env templates often pass) means no provider, not an unknown one.
         provider: (process.env.USPTO_AUTH_PROVIDER?.trim() || 'none') as AuthProvider,

@@ -174,7 +174,7 @@ export async function createAccountApp(
   /** Test seams: a shorter lock wait, a smaller token-request budget or in-flight caps, the clock token admission reads, and what `/health` reports as running. */
   tuning: { lockWaitMs?: number; tokenRequestLimit?: { rps: number; burst: number }; maxTokenChecksInFlight?: number; now?: () => number; buildInfo?: BuildInfo } = {},
 ): Promise<{ app: express.Express; auth: Auth; mcp: ReturnType<typeof createMcpHandler>; close: () => Promise<void> }> {
-  const buildInfo = tuning.buildInfo ?? readBuildInfo();
+  const buildInfo = tuning.buildInfo ?? readBuildInfo({});
   const app = express();
   app.disable('x-powered-by');
   // Railway terminates TLS at one trusted proxy hop.
