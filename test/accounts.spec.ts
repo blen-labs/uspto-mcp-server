@@ -397,6 +397,8 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     const refused = async (r: Response) => { expect(r.status).toBe(400); expect(await r.json()).toMatchObject({ error: 'invalid_request', error_description: expect.stringContaining('Redirect URIs must use HTTPS') }); };
     await refused(await fetch(`${config.origin}/api/auth/oauth2/authorize`, { method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: repeated }));
     await refused(await fetch(`${config.origin}/api/auth/oauth2/authorize?${repeated}`, { redirect: 'manual' }));
+    // A form body is split on `&` even when it is also valid JSON (the guard must not sniff the body).
+    await refused(await fetch(`${config.origin}/api/auth/oauth2/authorize`, { method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: '{"redirect_uri":"https://client.example/callback","x":"&redirect_uri=http://evil.example/cb"}' }));
     // A JSON array of redirect URIs is checked element by element, not as one joined string.
     await refused(await send(fetch, '/api/auth/oauth2/authorize', { client_id: 'x', redirect_uri: ['https://client.example/callback', 'http://evil.example/cb'], response_type: 'code' }));
   });
