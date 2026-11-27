@@ -137,3 +137,19 @@ stdio | Streamable HTTP (+OAuth, Host/Origin, per-IP bucket, quotas) | accounts 
 ## Docs
 
 `docs/architecture.md` (layered design, sandbox, guardrails and rate-limit rationale), `docs/sdk-reference.md` (search syntax, identifiers, errors, and the generated `odp`/`tsdr` method reference), and `docs/accounts.md` (account mode, portal API, key storage) are the deep references. `site/` is the public documentation site (Astro Starlight, base `/docs`; its own pnpm root and lockfile; `cd site && pnpm build`). `deploy/Dockerfile` builds it into `docs-site/` (a sibling of `dist/`, so the npm package never ships it) and account mode serves it at `/docs` (`src/accounts/docs.ts`: static, cached, its own CSP with inline scripts allowed only by hash because the docs share the portal's cookie origin). Its SDK reference page is `docs/sdk-reference.md` copied in at build time and its recipes read `examples/*.js`, so edit those sources; `site/scripts/check-links.mjs` decodes the connect deep links from the built pages and fails the build when one no longer matches what its client reads.
+
+## Security invariants
+
+Each line names the file that enforces the rule and the test that pins it.
+
+- AES-GCM envelopes require a 16-byte tag, and each ciphertext is bound to its account and purpose: `src/accounts/crypto.ts`; `test/accounts.spec.ts` ("encrypts keys with random nonces...").
+- A bearer token is admitted by its `at1` MAC before the failed-token budget and before any database lookup; anything not in that format is refused: `src/accounts/token-admission.ts`, `src/accounts/app.ts`; `test/token-admission.spec.ts`, `test/accounts.spec.ts` ("refuses bearer tokens outside the authenticated format...").
+- Token and revoke requests are budgeted per client address before any lookup or lock: `src/accounts/app.ts`; `test/accounts.spec.ts` ("limits token and revoke requests per IP...").
+- The client address comes only from the configured trusted header (`USPTO_CLIENT_IP_HEADER`): a literal IP, no zone id, rightmost entry of a list, else the TCP peer; IPv6 is counted per /64 and IPv4-mapped addresses are unmapped; never `req.ip` or an untrusted `x-forwarded-for`: `src/server/ipRateLimiter.ts`; `test/http.spec.ts`.
+- Lock targets are parsed with Better Auth's own runtime parser (`Request.formData()`), never a hand-rolled one: `src/accounts/app.ts` (`lockTarget`); `test/accounts.spec.ts` ("parses lock targets the way Better Auth reads token and revoke bodies").
+- OAuth redirect URIs with credentials or fragments are rejected: `src/accounts/app.ts` (`allowedRedirect`); `test/accounts.spec.ts` ("rejects unverified accounts, foreign browser origins, ... unsafe client redirects").
+- Never Origin-allowlist the bearer endpoint `/mcp/account` (hosted connectors send their own `Origin`); only the anonymous `/mcp` refuses foreign origins: `src/accounts/app.ts`; the same `test/accounts.spec.ts` case.
+- Hosted HTTP runs user code only in the hardened Deno runner, never in-process: `src/sandbox/index.ts` (`pickSandbox`), `src/bin.ts`; `test/sandbox.spec.ts` ("never runs user code in-process for multi-user HTTP serving").
+- Sensitive responses are `no-store`; only fingerprinted `/assets/*` may be cached immutably: `src/accounts/app.ts`; `test/docs.spec.ts` (error path).
+
+A change to any of these is a security change: port it to the sibling servers (uspto, fedreg, datagov, samgov, clinicaltrials, capture) or record why it does not apply.
