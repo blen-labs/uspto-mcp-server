@@ -4,6 +4,7 @@ import { stripAccessTokenAuthorizationScheme } from 'better-auth/oauth2';
 import { createMcpHandler } from '@modelcontextprotocol/server';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import { buildMcpServer, MCP_PROTOCOL_VERSION } from '../server/mcpServer.js';
+import { readBuildInfo, type BuildInfo } from '../server/buildInfo.js';
 import type { CatalogDeps } from '../server/toolCatalog.js';
 import type { AccountConfig } from './config.js';
 import { type Store } from './store.js';
@@ -170,9 +171,10 @@ export async function createAccountApp(
   fetcher: typeof fetch = fetch,
   /** Catalog for the anonymous endpoint (see publicDependencies): documentation tools only, no subject, no USPTO keys. */
   publicDeps: CatalogDeps,
-  /** Test seams: a shorter lock wait, a smaller token-request budget or in-flight caps, and the clock token admission reads. */
-  tuning: { lockWaitMs?: number; tokenRequestLimit?: { rps: number; burst: number }; maxTokenChecksInFlight?: number; now?: () => number } = {},
+  /** Test seams: a shorter lock wait, a smaller token-request budget or in-flight caps, the clock token admission reads, and what `/health` reports as running. */
+  tuning: { lockWaitMs?: number; tokenRequestLimit?: { rps: number; burst: number }; maxTokenChecksInFlight?: number; now?: () => number; buildInfo?: BuildInfo } = {},
 ): Promise<{ app: express.Express; auth: Auth; mcp: ReturnType<typeof createMcpHandler>; close: () => Promise<void> }> {
+  const buildInfo = tuning.buildInfo ?? readBuildInfo({});
   const app = express();
   app.disable('x-powered-by');
   // Railway terminates TLS at one trusted proxy hop.
@@ -270,6 +272,7 @@ export async function createAccountApp(
       res.json({
         status: 'ok',
         protocolVersion: MCP_PROTOCOL_VERSION, sandbox: deps.sandbox.kind,
+        ...buildInfo,
       });
     } catch {
       res.status(503).json({ status: 'unavailable' });

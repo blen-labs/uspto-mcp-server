@@ -12,6 +12,7 @@ import { baseSourceConfig } from '../supervisor/index.js';
 import { configureKeyGates, gateHandle } from './keyGates.js';
 import { LRUCache } from 'lru-cache';
 import { createAccountApp } from './app.js';
+import type { BuildInfo } from '../server/buildInfo.js';
 import { ACCOUNT_MCP_PATH } from './paths.js';
 import { digest } from './crypto.js';
 import { Store, personalOwner, KEY_KINDS, isKeyKind, type KeyKind } from './store.js';
@@ -146,7 +147,7 @@ export function publicDependencies(deps: CatalogDeps, origin: string): CatalogDe
   return { ...deps, tools: ['search_api', 'describe_schema'], sdk: { ...deps.sdk, methods: Object.freeze(methods), clients, meta } };
 }
 
-export async function startAccountHttp(deps: CatalogDeps, cfg: SupervisorConfig, config: AccountConfig, port: number, host: string): Promise<HttpHandle> {
+export async function startAccountHttp(deps: CatalogDeps, cfg: SupervisorConfig, config: AccountConfig, port: number, host: string, buildInfo?: BuildInfo): Promise<HttpHandle> {
   const pool = new Pool({ connectionString: config.databaseUrl, max: 10 });
   pool.on('error', () => log.error('account.database_error'));
   const store = new Store(pool, config.keyring);
@@ -155,7 +156,7 @@ export async function startAccountHttp(deps: CatalogDeps, cfg: SupervisorConfig,
     await store.initialize();
     // USPTO keys are personal: in account mode a process-level key is never used for anyone.
     for (const kind of KEY_KINDS) if (deps.sdk.methods[kind]) log.warn('account.shared_key_ignored', { kind, note: 'USPTO API keys are personal; account mode uses only each user\'s own key' });
-    service = await createAccountApp(config, store, accountDependencies(deps, cfg, store), fetch, publicDependencies(deps, config.origin));
+    service = await createAccountApp(config, store, accountDependencies(deps, cfg, store), fetch, publicDependencies(deps, config.origin), { buildInfo });
     const server = createServer(service.app);
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(port, host, resolve); });
     const cleanup = setInterval(() => { void store.cleanup().catch(() => log.error('account.cleanup_failed')); }, 60_000);

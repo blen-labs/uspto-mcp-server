@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { readBuildInfo } from '../src/server/buildInfo.js';
 import { Agent, createServer, get as httpGet, request as httpRequest, type Server } from 'node:http';
 import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -13,6 +14,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { Keyring, randomToken, digest } from '../src/accounts/crypto.js';
 import { AccessTokenFormat } from '../src/accounts/token-admission.js';
 import { Store, personalOwner, type KeyKind } from '../src/accounts/store.js';
+import { SERVER_VERSION } from '../src/server/mcpServer.js';
 import { createAccountApp, allowedRedirect, lockTarget, advisoryId } from '../src/accounts/app.js';
 import { accountDependencies, publicDependencies } from '../src/accounts/runtime.js';
 import { loadAccountConfig, type AccountConfig } from '../src/accounts/config.js';
@@ -367,6 +369,16 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     await mock?.close(); await service?.close();
     if (server) await new Promise<void>(resolve => server.close(() => resolve()));
     if (pool) { await pool.query(`DROP SCHEMA ${schema} CASCADE`); await pool.end(); }
+  });
+  it('serves /health with the running version and commit, and checks the database', async () => {
+    expect(await (await fetch(`${config.origin}/health`)).json()).toEqual({
+      status: 'ok', protocolVersion: '2026-07-28', sandbox: 'deno', version: SERVER_VERSION, commit: null,
+    });
+    // The commit is the platform's, read when the app starts; a replica started with one reports it.
+    const replica = await startReplica({ buildInfo: readBuildInfo({ RAILWAY_GIT_COMMIT_SHA: 'c'.repeat(40) }) });
+    await withReplica(replica, async () => {
+      expect(await (await fetch(`${config.origin}/health`)).json()).toMatchObject({ status: 'ok', version: SERVER_VERSION, commit: 'c'.repeat(40) });
+    });
   });
   it('registers desktop clients with loopback HTTP redirects even without application_type', async () => {
     for (const uri of ['http://127.0.0.1:33418/callback', 'http://localhost:33418/callback', 'http://[::1]:33418/callback']) {
