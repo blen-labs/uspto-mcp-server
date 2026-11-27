@@ -55,7 +55,10 @@ export function clientIp(req: IncomingMessage, trustedHeader?: string): string {
   const candidate = entries[entries.length - 1];
   // Only a literal address becomes a bucket key: a malformed or spoofed value would otherwise get a
   // fresh bucket of its own. Anything else counts against the peer, as if the header were absent.
-  const address = candidate ? normalize(candidate) : undefined;
+  // A zone id ("fe80::1%x") passes isIP but is an unbounded free-text suffix that would mint a distinct
+  // address string per request wherever the result is used as a key or forwarded (account mode hands it
+  // to the auth library as x-forwarded-for), so it is refused like any other malformed value.
+  const address = candidate && !candidate.includes('%') ? normalize(candidate) : undefined;
   return address && isIP(address) ? address : peer;
 }
 
