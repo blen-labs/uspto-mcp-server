@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   BUNDLED_DEV_DEPENDENCIES,
+  DEV_ONLY_SCRIPTS,
   changedManifestFields,
   changedPackages,
   productionPackages,
@@ -156,6 +157,9 @@ describe('changedManifestFields', () => {
       p.scripts.test = 'vitest run --reporter dot';
       p.scripts.lint = 'eslint .';
       p.scripts['test:live'] = 'vitest run test/live.spec.ts --bail 1';
+      p.scripts['test:web'] = 'playwright test --quiet';
+      p.scripts['kit:check'] = 'node scripts/portal-kit.mjs --verbose';
+      p.scripts['kit:update'] = 'node scripts/portal-kit.mjs --update --verbose';
     }))).toEqual([]);
   });
 
@@ -172,6 +176,16 @@ describe('changedManifestFields', () => {
     expect(changedManifestFields(base, edit(p => { p.scripts.prepack = 'pnpm run build'; }))).toEqual(['scripts']);
     // A script nobody has classified yet counts (fail safe).
     expect(changedManifestFields(base, edit(p => { p.scripts['bundle:extra'] = 'node x.js'; }))).toEqual(['scripts']);
+  });
+
+  it('classifies every package.json script as dev-only or shipped, so a new dev script cannot drift', () => {
+    // Shipped: run by users (`start`), or shaping dist/ and the MCPB bundle (build, build:web, prepack, mcpb:*).
+    const shipped = ['start', 'build', 'build:web', 'prepack', 'mcpb:prepare', 'mcpb:pack'];
+    const manifest = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf8')) as { scripts: Record<string, string> };
+    const scripts = Object.keys(manifest.scripts);
+    expect(scripts.filter(name => !shipped.includes(name) && !DEV_ONLY_SCRIPTS.includes(name))).toEqual([]);
+    expect(DEV_ONLY_SCRIPTS.filter(name => !scripts.includes(name))).toEqual([]);
+    expect(DEV_ONLY_SCRIPTS.filter(name => shipped.includes(name))).toEqual([]);
   });
 
   it('counts the portal\'s bundled devDependencies: they are compiled into dist/web', () => {

@@ -57,7 +57,9 @@ const UNSHIPPED_MANIFEST_FIELDS = new Set(['version', 'devDependencies', 'packag
  * hooks for users, and build, build:web, prepack and mcpb:* decide what dist/ and the bundle hold
  * (`npm pack` runs prepack in the release job). A new script counts until it is listed here.
  */
-export const DEV_ONLY_SCRIPTS = Object.freeze(['dev', 'dev:web', 'test', 'test:watch', 'test:live', 'lint', 'typecheck']);
+export const DEV_ONLY_SCRIPTS = Object.freeze([
+  'dev', 'dev:web', 'test', 'test:watch', 'test:live', 'test:web', 'lint', 'typecheck', 'kit:check', 'kit:update',
+]);
 
 const isBreaking = ({ subject, body = '' }) => BANG_SUBJECT.test(subject) || BREAKING_FOOTER.test(body);
 
