@@ -391,6 +391,16 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
     // Non-loopback HTTP stays refused, at registration and in a JSON-bodied authorize request.
     expect((await send(fetch, '/api/auth/oauth2/register', { redirect_uris: ['http://evil.example/cb'] })).status).toBe(400);
     expect((await send(fetch, '/api/auth/oauth2/authorize', { client_id: 'x', redirect_uri: 'http://evil.example/cb', response_type: 'code' })).status).toBe(400);
+    // A repeated redirect_uri is checked in full, not just its first value (Better Auth reads the last).
+    const repeated = 'client_id=x&response_type=code&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&redirect_uri=http%3A%2F%2Fevil.example%2Fcb';
+    // The refusal must be this guard's (an unknown client_id would also fail later, with another error).
+    const refused = async (r: Response) => { expect(r.status).toBe(400); expect(await r.json()).toMatchObject({ error: 'invalid_request', error_description: expect.stringContaining('Redirect URIs must use HTTPS') }); };
+    await refused(await fetch(`${config.origin}/api/auth/oauth2/authorize`, { method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: repeated }));
+    await refused(await fetch(`${config.origin}/api/auth/oauth2/authorize?${repeated}`, { redirect: 'manual' }));
+    // A form body is split on `&` even when it is also valid JSON (the guard must not sniff the body).
+    await refused(await fetch(`${config.origin}/api/auth/oauth2/authorize`, { method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: '{"redirect_uri":"https://client.example/callback","x":"&redirect_uri=http://evil.example/cb"}' }));
+    // A JSON array of redirect URIs is checked element by element, not as one joined string.
+    await refused(await send(fetch, '/api/auth/oauth2/authorize', { client_id: 'x', redirect_uri: ['https://client.example/callback', 'http://evil.example/cb'], response_type: 'code' }));
   });
   it('discovers OAuth, challenges anonymous callers, and offers Google sign-in', async () => {
     const metadata = await fetch(`${config.origin}/.well-known/oauth-protected-resource/mcp/account`);
