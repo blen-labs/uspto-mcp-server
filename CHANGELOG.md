@@ -5,6 +5,16 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-27
+
+### Changed
+- fail the smoke checks on a wrong value, an error-marked result or a JSON-RPC error
+- declare headCommit in the portal kit types
+- require a successful legacy initialize in the smoke check; read the kit commit from the manifest root
+- record the uspto-mcp-server commit in the portal kit manifest
+- list test:web, kit:check and kit:update as dev-only scripts
+- smoke-test the 2026-07-28 request shape in the Docker and MCPB checks
+
 ## [0.5.0] - 2026-11-27
 
 ### Added
@@ -288,7 +298,8 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 - Docker image (Node 24 + Deno), an MCPB bundle (manifest v0.4) that prompts for keys, and
   third-party license notices in every artifact.
 
-[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.5...v0.5.0
 [0.4.5]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.3...v0.4.4
