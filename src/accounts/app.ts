@@ -116,7 +116,7 @@ function jsonOrForm(body: Buffer): { getAll(name: string): string[] } {
   if (text.startsWith('{')) {
     try {
       const o = JSON.parse(text) as Record<string, unknown>;
-      return { getAll: name => (o[name] === undefined ? [] : [String(o[name])]) };
+      return { getAll: name => (o[name] === undefined ? [] : (Array.isArray(o[name]) ? o[name] as unknown[] : [o[name]]).map(String)) };
     } catch { return { getAll: () => ['invalid'] }; }
   }
   return new URLSearchParams(text);
