@@ -5,6 +5,16 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-27
+
+### Added
+- report the running version and commit (health)
+
+### Changed
+- list RAILWAY_GIT_COMMIT_SHA and use a version placeholder (health)
+- read the platform commit in bin.ts and pass it in (health)
+- inject the build info instead of stubbing the environment (health)
+
 ## [0.4.5] - 2026-11-26
 
 ### Fixed
@@ -278,7 +288,8 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 - Docker image (Node 24 + Deno), an MCPB bundle (manifest v0.4) that prompts for keys, and
   third-party license notices in every artifact.
 
-[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.5...HEAD
+[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.5...v0.5.0
 [0.4.5]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.2...v0.4.3
