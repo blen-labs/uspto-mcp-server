@@ -68,7 +68,9 @@ The portal (`web/`) targets WCAG 2.2 AA and Section 508; see
 checks. Its layout, landing page and UI primitives (`web/src/components/kit`, `components/ui`,
 `index.css`) are a kit shared byte for byte with BLEN's other MCP servers: product text goes in
 `web/src/brand.tsx`, and after changing a kit file run `pnpm kit:update` and copy the files and
-`web/portal-kit.json` to the other servers.
+`web/portal-kit.json` to the other servers. `kit:update` records the uspto-mcp-server commit it ran on as `commit` in
+the manifest; a copy keeps that manifest unchanged, so its `commit` is the uspto-mcp-server commit the copy came from
+(a manifest cannot name the commit that contains it, so a changed kit is recorded as "on top of `commit`").
 
 The documentation site is in `site/` (Astro Starlight). The Docker image builds it and the
 hosted server serves it at `/docs` (`src/accounts/docs.ts`), so it deploys with the server;
