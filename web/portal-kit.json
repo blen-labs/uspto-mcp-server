@@ -1,6 +1,7 @@
 {
-  "$comment": "Shared portal kit (scripts/portal-kit.mjs). The kit is owned by uspto-mcp-server; other servers copy these files unchanged together with this manifest.",
+  "$comment": "Shared portal kit (scripts/portal-kit.mjs). The kit is owned by uspto-mcp-server; other servers copy these files unchanged together with this manifest, so `commit` (the uspto-mcp-server HEAD `pnpm kit:update` ran on) tells each copy where it came from.",
   "source": "https://github.com/blen-labs/uspto-mcp-server",
+  "commit": "fcdf3318c1acb3e31e41e96290ff9dbd5ec10005",
   "files": {
     "web/src/assets/blen-logo.png": "ed0b7bcef0910ce09e298e4476f323aaa51e717c666762f97ca03cca21b7f77e",
     "web/src/components/kit/brand.ts": "6f37f189f5568b42c61b714b56b3ad6e942a5e3ef285958a27d6ffd981134935",
