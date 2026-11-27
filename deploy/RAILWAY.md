@@ -120,7 +120,7 @@ the body — a mismatch is rejected with `-32020`.
 
 ### Which release is running
 
-`GET /health` answers `{"status":"ok","protocolVersion":"2026-07-28","sandbox":"deno","version":"0.4.5","commit":"<full SHA>"}`
+`GET /health` answers `{"status":"ok","protocolVersion":"2026-07-28","sandbox":"deno","version":"<package version>","commit":"<full SHA>"}`
 (a server not in account mode answers `"ok": true` in place of `"status"`). `version` is the package
 version of the running build. `commit` is the full git SHA Railway built, which it injects as
 `RAILWAY_GIT_COMMIT_SHA` for deployments from GitHub; the server reads it once at startup, so a request
