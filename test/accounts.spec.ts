@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { readBuildInfo } from '../src/server/buildInfo.js';
 import { Agent, createServer, get as httpGet, request as httpRequest, type Server } from 'node:http';
 import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -374,9 +375,7 @@ describe.skipIf(!database)('account HTTP / OAuth with PostgreSQL', () => {
       status: 'ok', protocolVersion: '2026-07-28', sandbox: 'deno', version: SERVER_VERSION, commit: null,
     });
     // The commit is the platform's, read when the app starts; a replica started with one reports it.
-    vi.stubEnv('RAILWAY_GIT_COMMIT_SHA', 'c'.repeat(40));
-    const replica = await startReplica();
-    vi.unstubAllEnvs();
+    const replica = await startReplica({ buildInfo: readBuildInfo({ RAILWAY_GIT_COMMIT_SHA: 'c'.repeat(40) }) });
     await withReplica(replica, async () => {
       expect(await (await fetch(`${config.origin}/health`)).json()).toMatchObject({ status: 'ok', version: SERVER_VERSION, commit: 'c'.repeat(40) });
     });
