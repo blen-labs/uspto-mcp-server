@@ -1,5 +1,5 @@
 import type { IncomingMessage } from 'node:http';
-import { isIPv4, isIPv6 } from 'node:net';
+import { isIP, isIPv4, isIPv6 } from 'node:net';
 import { LRUCache } from 'lru-cache';
 
 /**
@@ -53,7 +53,13 @@ export function clientIp(req: IncomingMessage, trustedHeader?: string): string {
   const entries = (Array.isArray(value) ? value.join(',') : value ?? '')
     .split(',').map(s => s.trim()).filter(Boolean);
   const candidate = entries[entries.length - 1];
-  return candidate ? normalize(candidate) : peer;
+  // Only a literal address becomes a bucket key: a malformed or spoofed value would otherwise get a
+  // fresh bucket of its own. Anything else counts against the peer, as if the header were absent.
+  // A zone id ("fe80::1%x") passes isIP but is an unbounded free-text suffix that would mint a distinct
+  // address string per request wherever the result is used as a key or forwarded (account mode hands it
+  // to the auth library as x-forwarded-for), so it is refused like any other malformed value.
+  const address = candidate && !candidate.includes('%') ? normalize(candidate) : undefined;
+  return address && isIP(address) ? address : peer;
 }
 
 /** The 8 groups of an IPv6 address (a dotted IPv4 tail counts as two), or undefined if it is not one. */

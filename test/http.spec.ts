@@ -206,6 +206,14 @@ describe('clientIp', () => {
   it('falls back to the peer when the trusted header is missing', () => {
     expect(clientIp(req('100.64.0.2'), 'x-real-ip')).toBe('100.64.0.2');
   });
+  it('falls back to the peer when the trusted header is not a literal address', () => {
+    for (const junk of ['unknown', 'evil.example', '1.2.3', '1.2.3.4:80', '<script>', 'x'.repeat(200), 'fe80::1%eth0', `fe80::1%${'a'.repeat(200)}`]) {
+      expect(clientIp(req('100.64.0.2', { 'x-real-ip': junk }), 'x-real-ip'), junk).toBe('100.64.0.2');
+    }
+    // IPv4-mapped IPv6 and bracket-free IPv6 are still addresses.
+    expect(clientIp(req('100.64.0.2', { 'x-real-ip': '::ffff:71.178.42.139' }), 'x-real-ip')).toBe('71.178.42.139');
+    expect(clientIp(req('100.64.0.2', { 'x-real-ip': '2001:db8::1' }), 'x-real-ip')).toBe('2001:db8::1');
+  });
 });
 
 describe('HttpClient upstream protection (429 retry, gate, in-flight sharing)', () => {
