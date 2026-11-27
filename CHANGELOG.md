@@ -5,6 +5,17 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-11-27
+
+### Fixed
+- bump undici from 8.13.0 to 8.13.1 (#46) (deps)
+
+### Changed
+- bump actions/create-github-app-token from 3.3.0 to 3.4.0 in the actions group (#43) (deps)
+- correct the invariants Codex found overstated or mis-cited (claude)
+- state the invariants exactly as the code enforces them (claude)
+- add the security invariants checklist (claude)
+
 ## [0.5.2] - 2026-11-27
 
 ### Fixed
@@ -304,7 +315,8 @@ from `main` (see CONTRIBUTING.md, "Releasing").
 - Docker image (Node 24 + Deno), an MCPB bundle (manifest v0.4) that prompts for keys, and
   third-party license notices in every artifact.
 
-[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/blen-labs/uspto-mcp-server/compare/v0.4.5...v0.5.0
