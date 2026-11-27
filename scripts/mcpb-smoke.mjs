@@ -8,6 +8,7 @@
 //   node scripts/mcpb-smoke.mjs <unpacked-bundle-dir>
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
+import { executeProblems } from './smoke-result.mjs';
 
 const dir = resolve(process.argv[2] ?? 'mcpb-build');
 const child = spawn(process.execPath, ['dist/bin.js'], {
@@ -30,10 +31,11 @@ child.stdout.on('data', chunk => {
     const msg = JSON.parse(line);
     if (msg.id === 1) {
       clearTimeout(timer);
-      const ok = msg.result?.structuredContent?.ok === true && msg.result.structuredContent.value === 42;
-      console.log(ok ? 'mcpb smoke: execute returned 42 (2026-07-28 request)' : `mcpb smoke: unexpected ${line.slice(0, 500)}`);
+      const problems = executeProblems(msg, 1, 42);
+      if (problems.length === 0) console.log('mcpb smoke: execute returned 42 (2026-07-28 request)');
+      else console.error(`mcpb smoke: ${problems.join('; ')}\n${line.slice(0, 500)}`);
       child.kill();
-      process.exit(ok ? 0 : 1);
+      process.exit(problems.length === 0 ? 0 : 1);
     }
   }
 });
